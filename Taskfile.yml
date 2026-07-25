@@ -371,9 +371,11 @@ tasks:
   # --------------------------------------------------------------------- misc
 
   keys:dev:
-    desc: Generate a dev Ed25519 signing keypair into .env
+    desc: Print a dev Ed25519 signing key for JWT_PRIVATE_KEY_PEM in .env
     cmds:
-      - bash scripts/gen-dev-keys.sh
+      # Optional: with no key set, `task api` generates an ephemeral one at
+      # startup. Set it in .env only if you want sessions to survive a restart.
+      - cd {{.API_DIR}} && go run ./cmd/devkeys
 
   fmt:
     desc: Format everything

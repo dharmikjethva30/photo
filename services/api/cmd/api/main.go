@@ -11,7 +11,12 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/dharmikjethva30/photo/services/api/internal/adapter/postgres"
+	"github.com/dharmikjethva30/photo/services/api/internal/adapter/postgres/sqlcgen"
 	"github.com/dharmikjethva30/photo/services/api/internal/adapter/s3store"
+	"github.com/dharmikjethva30/photo/services/api/internal/app/albumsvc"
+	"github.com/dharmikjethva30/photo/services/api/internal/app/mediasvc"
+	"github.com/dharmikjethva30/photo/services/api/internal/auth"
 	"github.com/dharmikjethva30/photo/services/api/internal/httpapi"
 	"github.com/dharmikjethva30/photo/services/api/internal/platform/config"
 	"github.com/dharmikjethva30/photo/services/api/internal/platform/db"
@@ -76,10 +81,49 @@ func run() error {
 			Msg("s3 ready")
 	}
 
+	signingKey := cfg.Auth.JWTPrivateKeyPEM
+	if signingKey == "" && cfg.Env.IsLocal() {
+		// Generate an ephemeral key so `task api` works with no setup at all.
+		// Tokens do not survive a restart, which is the right trade locally.
+		// config.validate() makes this impossible outside local/test.
+		signingKey, err = auth.GenerateDevKeyPEM()
+		if err != nil {
+			return fmt.Errorf("generate ephemeral dev signing key: %w", err)
+		}
+		log.Warn().Msg("no JWT_PRIVATE_KEY_PEM set: using an ephemeral key, so sessions end on restart")
+	}
+
+	issuer, err := auth.NewTokenIssuer(
+		signingKey, cfg.Auth.JWTKeyID, cfg.PublicBaseURL, cfg.Auth.AccessTokenTTL,
+	)
+	if err != nil {
+		return fmt.Errorf("init token issuer: %w", err)
+	}
+
+	authSvc, err := auth.NewService(ctx, cfg, pool, issuer)
+	if err != nil {
+		return fmt.Errorf("init auth: %w", err)
+	}
+	if cfg.Env.IsLocal() {
+		// Loud, because it means any ID token is accepted as valid.
+		log.Warn().Msg("APP_ENV is local: sign-in uses FAKE providers and accepts any token")
+	}
+
+	visibility := postgres.NewVisibilityRepo(pool)
+	albums := albumsvc.New(pool, visibility, cfg.Limit)
+	media := mediasvc.New(pool, albums, storage, visibility, cfg.Limit)
+
 	handler := httpapi.NewRouter(httpapi.Deps{
 		Config: cfg,
 		Logger: log,
 		Health: httpapi.HealthHandler{Pool: pool, Storage: storage, Version: version},
+		Handlers: &httpapi.Handlers{
+			Config:  cfg,
+			Auth:    authSvc,
+			Albums:  albums,
+			Media:   media,
+			Queries: sqlcgen.New(pool),
+		},
 	})
 
 	srv := &http.Server{

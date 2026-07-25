@@ -19,9 +19,10 @@ import (
 // Deps is everything the HTTP layer needs. Explicit rather than a service
 // locator, so the compiler tells us what a new route depends on.
 type Deps struct {
-	Config config.Config
-	Logger zerolog.Logger
-	Health HealthHandler
+	Config   config.Config
+	Logger   zerolog.Logger
+	Health   HealthHandler
+	Handlers *Handlers
 }
 
 func NewRouter(d Deps) http.Handler {
@@ -44,9 +45,44 @@ func NewRouter(d Deps) http.Handler {
 	r.Get("/healthz", d.Health.Healthz)
 	r.Get("/readyz", d.Health.Readyz)
 
+	h := d.Handlers
+	// Published so a future service can verify our access tokens without sharing a
+	// secret. Outside /v1 because the path is fixed by convention.
+	r.Get("/.well-known/jwks.json", h.jwks)
+
 	r.Route("/v1", func(r chi.Router) {
-		// Routes are mounted here as milestones land. Kept explicit rather than
-		// auto-registered so the surface is greppable.
+		// --- public ---------------------------------------------------------
+		// Sign-in cannot require a session. Everything else does.
+		r.Post("/auth/{provider}", h.signIn)
+		r.Post("/auth/refresh", h.refresh)
+		r.Post("/auth/logout", h.logout)
+
+		// --- authenticated --------------------------------------------------
+		r.Group(func(r chi.Router) {
+			r.Use(h.RequireAuth)
+
+			r.Get("/me", h.getMe)
+			r.Patch("/me", h.updateMe)
+
+			r.Route("/albums", func(r chi.Router) {
+				r.Post("/", h.createAlbum)
+				r.Get("/", h.listAlbums)
+
+				r.Route("/{albumID}", func(r chi.Router) {
+					r.Get("/", h.getAlbum)
+					r.Get("/members", h.listAlbumMembers)
+					r.Get("/media", h.albumFeed)
+					r.Post("/uploads", h.declareUpload)
+				})
+			})
+
+			r.Post("/uploads/{mediaID}/complete", h.completeUpload)
+
+			// The stable image URL the feed hands out. Re-checks visibility, then
+			// redirects to a short-lived presigned URL.
+			r.Get("/media/{mediaID}/{rendition}", h.renditionRedirect)
+		})
+
 		r.NotFound(notFound)
 		r.MethodNotAllowed(methodNotAllowed)
 	})

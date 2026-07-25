@@ -49,3 +49,4 @@ coverage/
 # local scratch
 tmp/
 .localstack/
+.claude/scheduled_tasks.lock

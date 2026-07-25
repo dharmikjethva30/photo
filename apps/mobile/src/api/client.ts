@@ -141,3 +141,11 @@ export async function request<T>(path: string, opts: RequestOptions = {}): Promi
 /** Requests that must not carry a token: sign-in and refresh. */
 export const anonRequest = <T>(path: string, body?: unknown): Promise<T> =>
   request<T>(path, { method: 'POST', body, anonymous: true })
+
+/**
+ * A GET that must not carry a token — the public invite preview. It backs the join
+ * landing, which a not-yet-signed-in user reaches by following a shared link, so it
+ * must not trigger the 401-refresh path a normal GET would.
+ */
+export const anonGet = <T>(path: string): Promise<T> =>
+  request<T>(path, { method: 'GET', anonymous: true })

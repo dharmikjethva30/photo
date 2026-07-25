@@ -58,6 +58,35 @@ export interface AlbumMember {
   role: 'owner' | 'member'
 }
 
+/** An invite as the owner sees it, from POST/GET /v1/albums/{id}/invites. */
+export interface Invite {
+  id: string
+  code: string
+  /** The shareable link, WebBaseURL/a/<code> — what goes in a message or a QR. */
+  url: string
+  channel: 'link' | 'qr' | 'contact' | 'share_sheet' | 'sms'
+  useCount: number
+  maxUses?: number
+  expiresAt?: string
+  createdAt: string
+}
+
+/**
+ * The PUBLIC invite preview, from GET /v1/invites/{code} (unauthenticated). Just
+ * enough for the join landing; never members or media.
+ */
+export interface InvitePreview {
+  code: string
+  albumId: string
+  albumTitle: string
+  privacyMode: PrivacyMode
+  albumState: AlbumState
+  coverMediaId?: string
+  valid: boolean
+  /** Present only when invalid: 'revoked' | 'expired' | 'full'. */
+  invalidReason?: string
+}
+
 export interface FeedItem {
   id: string
   kind: 'photo' | 'video'

@@ -5,14 +5,25 @@
  */
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { setSession } from '../auth/session'
-import { anonRequest, request } from './client'
-import type { Album, AlbumMember, AlbumTemplate, FeedPage, Me, PrivacyMode, Session } from './types'
+import { anonGet, anonRequest, request } from './client'
+import type {
+  Album,
+  AlbumMember,
+  AlbumTemplate,
+  FeedPage,
+  Invite,
+  InvitePreview,
+  Me,
+  PrivacyMode,
+  Session,
+} from './types'
 
 export const queryKeys = {
   me: ['me'] as const,
   albums: ['albums'] as const,
   album: (id: string) => ['album', id] as const,
   albumMembers: (id: string) => ['album', id, 'members'] as const,
+  albumInvites: (id: string) => ['album', id, 'invites'] as const,
   albumFeed: (id: string, filter: string) => ['album', id, 'feed', filter] as const,
 }
 
@@ -110,6 +121,72 @@ export function useCreateAlbum() {
       void qc.invalidateQueries({ queryKey: queryKeys.albums })
       // The free-album counter moved, and the paywall decision depends on it.
       void qc.invalidateQueries({ queryKey: queryKeys.me })
+    },
+  })
+}
+
+// --- invites ---------------------------------------------------------------
+
+/** Live invites for an album's manage screen. */
+export function useAlbumInvites(albumID: string) {
+  return useQuery({
+    queryKey: queryKeys.albumInvites(albumID),
+    queryFn: async () => {
+      const res = await request<{ invites: Invite[] }>(`/v1/albums/${albumID}/invites`)
+      return res.invites
+    },
+  })
+}
+
+/** Mint an invite. Defaults to a reusable link; the caller may pass a channel. */
+export function useCreateInvite(albumID: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (vars: { channel?: Invite['channel']; maxUses?: number }) =>
+      request<Invite>(`/v1/albums/${albumID}/invites`, { method: 'POST', body: vars }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.albumInvites(albumID) })
+    },
+  })
+}
+
+/** Revoke an invite; it stops working immediately. */
+export function useRevokeInvite(albumID: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (inviteID: string) =>
+      request<void>(`/v1/albums/${albumID}/invites/${inviteID}`, { method: 'DELETE' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.albumInvites(albumID) })
+    },
+  })
+}
+
+/**
+ * The PUBLIC invite preview for the join landing. Unauthenticated on purpose: the
+ * landing renders before the user has signed in. `retry: false` because a 404 (bad
+ * code) or 409-shaped invalid is a definitive answer, not a transient error.
+ */
+export function useInvitePreview(code: string) {
+  return useQuery({
+    queryKey: ['invite', code],
+    queryFn: () => anonGet<InvitePreview>(`/v1/invites/${code}`),
+    retry: false,
+    enabled: code.length > 0,
+  })
+}
+
+/**
+ * Accept an invite and join. Requires a session. On success the whole album list and
+ * the just-joined album are refreshed so the app lands in an accurate state.
+ */
+export function useAcceptInvite() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (code: string) => request<Album>(`/v1/invites/${code}/accept`, { method: 'POST' }),
+    onSuccess: album => {
+      void qc.invalidateQueries({ queryKey: queryKeys.albums })
+      void qc.invalidateQueries({ queryKey: queryKeys.album(album.id) })
     },
   })
 }

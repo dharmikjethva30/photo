@@ -75,6 +75,25 @@ export default function AlbumScreen() {
           <Icon color={t.ink} name="chevron-left" size={17} />
         </Pressable>
         <View style={{ flex: 1 }} />
+        {/* Invite is available even on a locked album — sharing a keepsake with someone
+            who was there is exactly when you'd want to. */}
+        <Pressable
+          accessibilityLabel="Invite people"
+          onPress={() => router.push(`/(modals)/invite/${albumId}`)}
+          style={{
+            width: 38,
+            height: 38,
+            borderRadius: 19,
+            backgroundColor: t.surface,
+            borderWidth: 1,
+            borderColor: t.line,
+            alignItems: 'center',
+            justifyContent: 'center',
+            marginRight: 8,
+          }}
+        >
+          <Icon color={t.ink} name="user" size={17} />
+        </Pressable>
         {!locked && (
           <Pressable
             accessibilityLabel="Add photos"

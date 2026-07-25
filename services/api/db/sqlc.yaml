@@ -1,0 +1,65 @@
+version: "2"
+sql:
+  - engine: postgresql
+    schema: migrations
+    queries: queries
+    gen:
+      go:
+        package: sqlcgen
+        out: ../internal/adapter/postgres/sqlcgen
+        sql_package: pgx/v5
+
+        emit_json_tags: false
+        emit_prepared_queries: false
+        emit_interface: true
+        emit_empty_slices: true
+        emit_pointers_for_null_types: true
+        emit_enum_valid_method: true
+        emit_all_enum_values: true
+
+        # Generated structs are an adapter-layer detail. The domain has its own
+        # types; mapping happens in internal/adapter/postgres, which is what keeps
+        # the domain free of SQL (see the depguard rule in .golangci.yml).
+        overrides:
+          # pgvector's type, so a vector(512) round-trips instead of becoming a
+          # string. Must be paired with pgxvec.RegisterTypes in the pool's
+          # AfterConnect — the override alone is not enough.
+          - db_type: "vector"
+            go_type:
+              import: "github.com/pgvector/pgvector-go"
+              type: "Vector"
+          - db_type: "vector"
+            nullable: true
+            go_type:
+              import: "github.com/pgvector/pgvector-go"
+              type: "Vector"
+
+          # uuid as a real type rather than pgtype.UUID's [16]byte wrapper, which
+          # is painful to compare, log and pass around.
+          - db_type: "uuid"
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+          - db_type: "uuid"
+            nullable: true
+            go_type:
+              import: "github.com/google/uuid"
+              type: "UUID"
+              pointer: true
+
+          # timestamptz as time.Time. Every timestamp in this schema is
+          # timestamptz on purpose: photos arrive from members in different
+          # timezones and the feed is ordered by capture time.
+          - db_type: "timestamptz"
+            go_type: "time.Time"
+          - db_type: "timestamptz"
+            nullable: true
+            go_type:
+              type: "time.Time"
+              pointer: true
+
+          # No jsonb or inet override: sqlc rejects "[]byte" as a basic type, and
+          # pgx/v5's defaults for both are already what we want.
+
+    rules:
+      - sqlc/db-prepare

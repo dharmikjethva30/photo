@@ -139,6 +139,14 @@ tasks:
     cmds:
       - goose -dir {{.API_DIR}}/db/migrations create {{.CLI_ARGS}} sql
 
+  db:invariants:
+    desc: Assert the business rules are enforced by the SCHEMA, not by Go
+    cmds:
+      # Each block attempts an illegal write and expects it to be rejected. Kept in
+      # SQL because the subject under test is the schema: a Go test could pass while
+      # the rule was actually being enforced in Go.
+      - "{{.COMPOSE}} exec -T postgres psql -U $POSTGRES_USER -d $POSTGRES_DB -q -v ON_ERROR_STOP=1 < {{.API_DIR}}/db/schema_invariants_test.sql"
+
   psql:
     desc: Open a psql shell on the dev database
     interactive: true

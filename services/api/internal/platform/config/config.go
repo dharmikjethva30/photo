@@ -169,5 +169,18 @@ func (c Config) validate() error {
 		errs = append(errs, errors.New("MULTIPART_PART_SIZE_BYTES must be at least 5 MiB"))
 	}
 
+	// The schema is the authority on the free-album ceiling:
+	// album_entitlements.free_slot has CHECK (free_slot BETWEEN 1 AND 3) and a
+	// unique index per (user_id, free_slot). Config may LOWER the limit for an
+	// experiment, but a value above the schema ceiling would produce inserts that
+	// always fail — better to refuse at startup than at a user's 4th album.
+	const schemaFreeSlotCeiling = 3
+	if c.Limit.FreeAlbumSlots < 1 || c.Limit.FreeAlbumSlots > schemaFreeSlotCeiling {
+		errs = append(errs, fmt.Errorf(
+			"FREE_ALBUM_SLOTS is %d; must be between 1 and %d (the ceiling in migration 00003 — "+
+				"raising it requires a migration, not a config change)",
+			c.Limit.FreeAlbumSlots, schemaFreeSlotCeiling))
+	}
+
 	return errors.Join(errs...)
 }

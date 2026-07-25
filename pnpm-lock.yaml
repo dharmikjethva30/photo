@@ -36,6 +36,12 @@ importers:
         specifier: ^4.0.2
         version: 4.0.2
 
+  packages/ui-spec:
+    dependencies:
+      '@photu/tokens':
+        specifier: workspace:*
+        version: link:../tokens
+
 packages:
 
   '@biomejs/biome@2.5.5':

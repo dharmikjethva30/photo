@@ -206,6 +206,13 @@ tasks:
     cmds:
       - cd {{.WORKER_DIR}} && uv run python -m mediaworker.models fetch
 
+  fonts:build:
+    desc: Instance and subset the 10 static font faces the app bundles
+    cmds:
+      # uv --with keeps fontTools out of any project's dependency graph; this runs
+      # rarely (only when a face is added) and is not part of the app build.
+      - uv run --quiet --with fonttools --with brotli python scripts/build-fonts.py
+
   # -------------------------------------------------------------------- checks
 
   test:

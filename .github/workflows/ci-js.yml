@@ -1,0 +1,52 @@
+name: ci-js
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-js-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          # Reads .nvmrc. The floor is 22.12, not 22 — rolldown's native binding
+          # (via vitest) declares `^20.19.0 || >=22.12.0`, and below that pnpm
+          # silently skips it as an unsatisfiable optional dep, surfacing later as
+          # a confusing "Cannot find module ./rolldown-binding..." failure.
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Lint and format
+        run: pnpm biome ci .
+
+      - name: Typecheck
+        run: pnpm turbo run typecheck
+
+      - name: Test
+        run: pnpm turbo run test
+
+      - name: Build
+        run: pnpm turbo run build
+
+      # The tokens CSS is generated from the TS tokens. If someone edits a palette
+      # and does not rebuild, web and native drift apart silently.
+      - name: Generated tokens CSS is up to date
+        run: git diff --exit-code -- packages/tokens/dist
+
+      # The walking skeleton's defining property is that nothing in it is mocked.
+      # The design prototype ships attractive fixture data and it is very easy to
+      # port a screen by copying it and never wiring the API.
+      - name: No prototype fixtures in app code
+        run: bash scripts/no-mocks.sh

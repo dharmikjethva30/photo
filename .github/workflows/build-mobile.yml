@@ -1,0 +1,49 @@
+name: build-mobile
+
+# Manual dispatch only. Mobile builds are slow and consume EAS credits, and the
+# JS lane already typechecks and tests the app code on every push.
+on:
+  workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to build
+        type: choice
+        options: [all, ios, android]
+        default: all
+      profile:
+        description: EAS build profile
+        type: choice
+        options: [development, preview, production]
+        default: development
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version-file: .nvmrc
+          cache: pnpm
+
+      - run: pnpm install --frozen-lockfile
+
+      # ios/ and android/ are gitignored — app.config.ts plus config plugins are
+      # the source of truth, and prebuild regenerates them here. See
+      # docs/adr/0001. This also means the build does not depend on native dirs
+      # generated on one developer's machine.
+      - name: Prebuild native projects
+        working-directory: apps/mobile
+        run: pnpm exec expo prebuild --clean --platform ${{ inputs.platform == 'all' && 'all' || inputs.platform }}
+
+      - uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: EAS build
+        working-directory: apps/mobile
+        run: eas build --non-interactive --no-wait --platform ${{ inputs.platform }} --profile ${{ inputs.profile }}

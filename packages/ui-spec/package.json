@@ -1,0 +1,21 @@
+{
+  "name": "@photu/ui-spec",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "//": "TYPES ONLY — zero runtime. Both @photu/ui-native and @photu/ui-web type themselves against this, so a prop added on one side is a compile error on the other. See docs/adr/0002.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@photu/tokens": "workspace:*"
+  }
+}

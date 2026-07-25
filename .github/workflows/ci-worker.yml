@@ -1,0 +1,61 @@
+name: ci-worker
+
+on:
+  push:
+    branches: [main]
+    paths: ["services/mediaworker/**", "services/api/db/migrations/**", ".github/workflows/ci-worker.yml"]
+  pull_request:
+    paths: ["services/mediaworker/**", "services/api/db/migrations/**", ".github/workflows/ci-worker.yml"]
+
+concurrency:
+  group: ci-worker-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    # The worker reads and writes the same schema as the API but with
+    # hand-written SQL, so it needs a real migrated database. That cross-language
+    # schema check is the whole point of this lane — it is the only thing that
+    # catches the API renaming a column the worker still selects.
+    services:
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: photu
+          POSTGRES_PASSWORD: photu
+          POSTGRES_DB: photu
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U photu -d photu"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+
+    env:
+      DATABASE_URL: postgres://photu:photu@localhost:5432/photu?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v8
+        with:
+          enable-cache: true
+          working-directory: services/mediaworker
+
+      - name: Apply migrations
+        # goose rather than the Go binary: this lane must not require a Go build.
+        uses: mscno/setup-goose@v1
+
+      - run: goose -dir services/api/db/migrations postgres "$DATABASE_URL" up
+
+      - name: Lint
+        working-directory: services/mediaworker
+        run: |
+          uv run ruff check .
+          uv run ruff format --check .
+
+      - name: Tests
+        working-directory: services/mediaworker
+        # Includes the schema-conformance test asserting every column the worker
+        # touches exists in the migrated database.
+        run: uv run pytest -q

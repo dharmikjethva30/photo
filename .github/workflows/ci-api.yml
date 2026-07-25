@@ -1,0 +1,72 @@
+name: ci-api
+
+on:
+  push:
+    branches: [main]
+    paths: ["services/api/**", "packages/api-contract/**", ".github/workflows/ci-api.yml"]
+  pull_request:
+    paths: ["services/api/**", "packages/api-contract/**", ".github/workflows/ci-api.yml"]
+
+concurrency:
+  group: ci-api-${{ github.ref }}
+  cancel-in-progress: true
+
+defaults:
+  run:
+    working-directory: services/api
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+
+    services:
+      # pgvector, not plain postgres: the schema declares vector(512) columns and
+      # will not migrate without the extension.
+      postgres:
+        image: pgvector/pgvector:pg17
+        env:
+          POSTGRES_USER: photu
+          POSTGRES_PASSWORD: photu
+          POSTGRES_DB: photu
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U photu -d photu"
+          --health-interval 2s --health-timeout 3s --health-retries 30
+
+    env:
+      DATABASE_URL: postgres://photu:photu@localhost:5432/photu?sslmode=disable
+
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version-file: services/api/go.mod
+          cache-dependency-path: services/api/go.sum
+
+      - run: go mod download
+      - run: go vet ./...
+
+      - uses: golangci/golangci-lint-action@v9
+        with:
+          working-directory: services/api
+
+      - name: Migrations apply, roll back to zero, and re-apply
+        # Down-migrations only stay correct if they are exercised. A broken one is
+        # discovered at the worst possible moment otherwise.
+        run: |
+          go run ./cmd/migrate up
+          go run ./cmd/migrate down-to 0
+          go run ./cmd/migrate up
+
+      - name: Tests
+        # -race because the entitlement and upload paths rely on transactional
+        # correctness under concurrency, and one test deliberately fires parallel
+        # album creates to prove the unique index (not the Go code) enforces the
+        # 3-free-album limit.
+        run: go test ./... -race -count=1
+
+      - name: Generated code is up to date
+        run: |
+          go generate ./...
+          git diff --exit-code

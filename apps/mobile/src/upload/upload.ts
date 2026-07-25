@@ -26,17 +26,6 @@ export interface PickedAsset {
   assetId?: string | null
 }
 
-export type UploadPhase = 'declaring' | 'uploading' | 'completing' | 'done' | 'failed'
-
-export interface UploadProgress {
-  index: number
-  total: number
-  phase: UploadPhase
-  /** 0..1 within the current file, while `phase` is 'uploading'. */
-  fileProgress?: number
-  error?: string
-}
-
 /**
  * Upload one asset.
  *
@@ -127,46 +116,10 @@ export async function uploadAsset(
   return { mediaId: declared.mediaId }
 }
 
-/**
- * Upload a batch sequentially, reporting progress.
- *
- * Sequential on purpose for M1: concurrency, resumable multipart and true background
- * upload land in M2, and building them here first would mean writing the queue twice.
- */
-export async function uploadBatch(
-  albumID: string,
-  assets: PickedAsset[],
-  onProgress: (p: UploadProgress) => void,
-): Promise<{ uploaded: number; failed: number }> {
-  let uploaded = 0
-  let failed = 0
-
-  for (let i = 0; i < assets.length; i++) {
-    const asset = assets[i]
-    if (!asset) continue
-
-    try {
-      onProgress({ index: i, total: assets.length, phase: 'declaring' })
-      await uploadAsset(albumID, asset, fraction => {
-        onProgress({ index: i, total: assets.length, phase: 'uploading', fileProgress: fraction })
-      })
-      uploaded++
-      onProgress({ index: i, total: assets.length, phase: 'done' })
-    } catch (err) {
-      // One bad photo must not abandon the rest of the batch — the spec's whole
-      // upload story is "retry what failed, keep what worked".
-      failed++
-      onProgress({
-        index: i,
-        total: assets.length,
-        phase: 'failed',
-        error: err instanceof Error ? err.message : String(err),
-      })
-    }
-  }
-
-  return { uploaded, failed }
-}
+// The old uploadBatch lived here — a sequential in-modal loop. It is gone: batches now
+// go through the persistent queue (src/upload/queue.ts) drained by UploadQueueProvider,
+// so an upload survives leaving the screen and an app kill. uploadAsset above is the
+// single per-file primitive both the queue processor and any future caller share.
 
 /**
  * Resolve a content type.

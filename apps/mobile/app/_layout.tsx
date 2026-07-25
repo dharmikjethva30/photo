@@ -8,6 +8,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler'
 import { SafeAreaProvider } from 'react-native-safe-area-context'
 import { ApiError } from '../src/api/errors'
 import { restoreSession } from '../src/auth/session'
+import { UploadQueueProvider } from '../src/upload/UploadQueueProvider'
 
 /**
  * Root layout: providers only, no UI.
@@ -49,15 +50,19 @@ export default function RootLayout() {
       <SafeAreaProvider>
         <QueryClientProvider client={queryClient}>
           <ThemeProvider initialPalette={DEFAULT_PALETTE}>
-            <ThemedStatusBar />
-            <Stack screenOptions={{ headerShown: false }}>
-              <Stack.Screen name="(app)" />
-              <Stack.Screen name="(auth)" />
-              {/* Modals present over the album they were opened from, which is what
-                  makes both of the prototype's stack-surgery behaviours reduce to
-                  router.dismissAll(). See the plan's navigation notes. */}
-              <Stack.Screen name="(modals)" options={{ presentation: 'modal' }} />
-            </Stack>
+            {/* Mounted above the navigator so the queue keeps draining across screen
+                changes — leaving the upload modal must not stop the upload. */}
+            <UploadQueueProvider>
+              <ThemedStatusBar />
+              <Stack screenOptions={{ headerShown: false }}>
+                <Stack.Screen name="(app)" />
+                <Stack.Screen name="(auth)" />
+                {/* Modals present over the album they were opened from, which is what
+                    makes both of the prototype's stack-surgery behaviours reduce to
+                    router.dismissAll(). See the plan's navigation notes. */}
+                <Stack.Screen name="(modals)" options={{ presentation: 'modal' }} />
+              </Stack>
+            </UploadQueueProvider>
           </ThemeProvider>
         </QueryClientProvider>
       </SafeAreaProvider>

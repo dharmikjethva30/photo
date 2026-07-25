@@ -3,6 +3,7 @@ import { useRouter } from 'expo-router'
 import { ActivityIndicator, Pressable, RefreshControl, ScrollView, View } from 'react-native'
 import { useAlbums, useMe } from '../../src/api/hooks'
 import type { Album } from '../../src/api/types'
+import { useQueueCounts } from '../../src/upload/queue'
 
 /**
  * The library — every album you are part of. From the prototype's `ScreenLibrary`.
@@ -32,11 +33,14 @@ export default function Library() {
         }}
       >
         <Text variant="titleSm">photu</Text>
-        {me.data && (
-          <Pressable onPress={() => router.push('/(app)/me')}>
-            <Avatar name={me.data.displayName} size={32} userId={me.data.id} />
-          </Pressable>
-        )}
+        <View style={{ flexDirection: 'row', alignItems: 'center', gap: 12 }}>
+          <UploadStatusPill />
+          {me.data && (
+            <Pressable onPress={() => router.push('/(app)/me')}>
+              <Avatar name={me.data.displayName} size={32} userId={me.data.id} />
+            </Pressable>
+          )}
+        </View>
       </View>
 
       <View style={{ paddingHorizontal: t.screenSpace.gutter, paddingBottom: 16 }}>
@@ -114,6 +118,44 @@ export default function Library() {
         </Button>
       </View>
     </Screen>
+  )
+}
+
+/**
+ * A compact upload-status affordance in the header.
+ *
+ * It exists mainly for discoverability after an app kill: the persisted queue resumes
+ * on its own, but without this there is no way to open the queue and watch or retry.
+ * Shown only when there is something to look at (active or failed) — an empty queue
+ * should not add chrome.
+ */
+function UploadStatusPill() {
+  const t = useTheme()
+  const router = useRouter()
+  const counts = useQueueCounts()
+
+  if (counts.active === 0 && counts.failed === 0) return null
+
+  const failed = counts.failed > 0 && counts.active === 0
+  return (
+    <Pressable
+      accessibilityLabel="Uploads"
+      onPress={() => router.push('/(app)/uploads')}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingVertical: 6,
+        paddingHorizontal: 10,
+        borderRadius: 999,
+        backgroundColor: failed ? t.semantic.errorCardBg : t.accentSoft,
+      }}
+    >
+      <Icon color={failed ? t.danger : t.accent} name="upload" size={14} />
+      <Text color={failed ? t.danger : t.accent} variant="metaSm">
+        {failed ? `${counts.failed} failed` : `${counts.active} uploading`}
+      </Text>
+    </Pressable>
   )
 }
 

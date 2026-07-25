@@ -90,6 +90,34 @@ func (s *Service) Resume(ctx context.Context, mediaID, userID uuid.UUID) (Resume
 	return out, nil
 }
 
+// liveUploadID returns this media item's existing S3 multipart upload id, if it still
+// exists, or "" if there is none to reuse.
+//
+// The check against S3 is the point. A row can name an upload that S3 has since
+// discarded — the AbortIncompleteMultipartUpload lifecycle rule and the stalled-upload
+// reconciler both do that — and handing a dead upload id back to a client produces a
+// NoSuchUpload on its first part, which reads like a server bug.
+func (s *Service) liveUploadID(ctx context.Context, mediaID uuid.UUID, key string) (string, error) {
+	session, err := s.q.GetUploadSession(ctx, mediaID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", nil
+		}
+		return "", problem.Internal(fmt.Errorf("get upload session: %w", err))
+	}
+	if session.S3UploadID == nil || session.AbortedAt != nil || session.CompletedAt != nil {
+		return "", nil
+	}
+
+	if _, err := s.store.ListParts(ctx, key, *session.S3UploadID); err != nil {
+		if errors.Is(err, s3store.ErrNotFound) {
+			return "", nil // expired or aborted; the caller starts a fresh one
+		}
+		return "", problem.Internal(err)
+	}
+	return *session.S3UploadID, nil
+}
+
 // PartURLs signs a batch of part URLs for the parts the client asks about.
 //
 // The client supplies each part's SHA-256 because the signature has to cover it — see

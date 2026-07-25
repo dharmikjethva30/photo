@@ -85,12 +85,47 @@ export interface FeedPage {
 export interface DeclareUploadResult {
   mediaId: string
   mode?: 'single' | 'multipart'
+  /** Present only when mode is 'single'. */
   upload?: {
     url: string
     headers: Record<string, string>
     expiresAt: string
   }
+  /**
+   * Present only when mode is 'multipart'. Deliberately WITHOUT part URLs: signing a
+   * part requires that part's sha256, and at declare time the client has not read a
+   * byte. It posts checksums to /uploads/{id}/parts to get URLs. See docs/adr/0003.
+   */
+  uploadId?: string
+  partSize?: number
+  partCount?: number
   alreadyUploaded?: boolean
+}
+
+/** One signed part URL, from POST /v1/uploads/{id}/parts. */
+export interface PresignedPart {
+  partNumber: number
+  url: string
+  /**
+   * The checksum this URL was signed for. It MUST be sent as x-amz-checksum-sha256;
+   * the URL is unusable without it, because the value is inside the signature.
+   */
+  sha256: string
+  expiresAt: string
+}
+
+/**
+ * From GET /v1/uploads/{id}. Server-computed from S3's own ListParts, which is why it
+ * can be trusted after an app kill when local bookkeeping cannot.
+ */
+export interface ResumeState {
+  mediaId: string
+  state: 'pending' | 'uploaded' | 'ready' | 'failed'
+  mode: 'single' | 'multipart'
+  partSize?: number
+  partCount?: number
+  completed: { partNumber: number; etag: string; sha256?: string }[]
+  missing: number[]
 }
 
 /**

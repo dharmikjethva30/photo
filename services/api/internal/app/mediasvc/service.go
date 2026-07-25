@@ -214,9 +214,26 @@ func (s *Service) Declare(ctx context.Context, in DeclareInput) (DeclareResult, 
 	// 200-400 MB, and a single stream of that on a phone network will be
 	// interrupted; with 8 MiB parts an interruption costs one part, not the file.
 	if in.ByteSize > s.limits.MultipartThreshold {
-		uploadID, err := s.store.CreateMultipart(ctx, key, media.ContentType)
+		// REUSE a live multipart upload if this media item already has one.
+		//
+		// This is what makes resume across an app kill actually work. Re-declaring is
+		// the client's natural first move on retry — it is how it recovers the mediaId —
+		// and starting a fresh S3 upload here would orphan every part already sent,
+		// silently turning "resume" into "start over" for the exact user whose
+		// connection is bad enough to need resuming.
+		//
+		// Liveness is confirmed against S3 rather than assumed from the row: a multipart
+		// upload can be aborted by the lifecycle rule or by the reconciler while the row
+		// still names it.
+		uploadID, err := s.liveUploadID(ctx, media.ID, key)
 		if err != nil {
-			return DeclareResult{}, problem.Internal(err)
+			return DeclareResult{}, err
+		}
+		if uploadID == "" {
+			uploadID, err = s.store.CreateMultipart(ctx, key, media.ContentType)
+			if err != nil {
+				return DeclareResult{}, problem.Internal(err)
+			}
 		}
 
 		partSize := s.limits.MultipartPartSize

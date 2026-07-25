@@ -11,6 +11,7 @@
 import { File, UploadTask } from 'expo-file-system'
 import { request } from '../api/client'
 import type { DeclareUploadResult } from '../api/types'
+import { uploadInParts } from './multipart'
 
 export interface PickedAsset {
   /** A local file:// URI for the ORIGINAL bytes. */
@@ -46,6 +47,7 @@ export async function uploadAsset(
   albumID: string,
   asset: PickedAsset,
   onBytes?: (fraction: number) => void,
+  shouldCancel?: () => boolean,
 ): Promise<{ mediaId: string }> {
   const file = new File(asset.uri)
   if (!file.exists) throw new Error('That photo is no longer available on this device.')
@@ -79,27 +81,47 @@ export async function uploadAsset(
 
   // Already uploaded and verified. The server deliberately withholds a fresh
   // presigned URL here so verified bytes cannot be replaced.
-  if (declared.alreadyUploaded || !declared.upload) {
+  if (declared.alreadyUploaded) {
     return { mediaId: declared.mediaId }
   }
 
-  // PUT straight to S3 with EXACTLY the headers that were signed. Adding or omitting
-  // one changes the canonical request and S3 answers 403 SignatureDoesNotMatch.
-  const task = new UploadTask(file, declared.upload.url, {
-    httpMethod: 'PUT',
-    headers: declared.upload.headers,
-    onProgress: p => {
-      if (p.totalBytes > 0) onBytes?.(p.bytesSent / p.totalBytes)
-    },
-  })
+  if (declared.mode === 'multipart') {
+    if (!declared.partSize || !declared.partCount) {
+      throw new Error('The server described a multipart upload without a part plan.')
+    }
+    await uploadInParts(
+      file,
+      {
+        mediaId: declared.mediaId,
+        partSize: declared.partSize,
+        partCount: declared.partCount,
+      },
+      { onProgress: onBytes, shouldCancel },
+    )
+  } else if (declared.upload) {
+    // PUT straight to S3 with EXACTLY the headers that were signed. Adding or omitting
+    // one changes the canonical request and S3 answers 403 SignatureDoesNotMatch.
+    const task = new UploadTask(file, declared.upload.url, {
+      httpMethod: 'PUT',
+      headers: declared.upload.headers,
+      onProgress: p => {
+        if (p.totalBytes > 0) onBytes?.(p.bytesSent / p.totalBytes)
+      },
+    })
 
-  const res = await task.uploadAsync()
-  if (res.status !== 200) {
-    throw new Error(`Storage rejected the upload (${res.status}).`)
+    const res = await task.uploadAsync()
+    if (res.status !== 200) {
+      throw new Error(`Storage rejected the upload (${res.status}).`)
+    }
+  } else {
+    throw new Error('The server returned no way to upload this file.')
   }
 
-  // The server HEADs the object and compares size and checksum against what was
-  // declared before accepting it. That check is the trust boundary.
+  // No body, for either mode. The server reads the mode from the upload session and
+  // gets the multipart part list from S3 itself, so this call needs nothing but the id
+  // — which is what lets an upload be finished by a process that has forgotten
+  // everything else. It HEADs the object and checks size and checksum against what was
+  // declared; that check is the trust boundary.
   await request(`/v1/uploads/${declared.mediaId}/complete`, { method: 'POST', body: {} })
 
   return { mediaId: declared.mediaId }

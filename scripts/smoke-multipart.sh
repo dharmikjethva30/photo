@@ -152,6 +152,25 @@ for n in $(seq 1 "$PART_COUNT"); do
 done
 pass "sent $((PART_COUNT - 1)) of $PART_COUNT parts, deliberately skipping part $GAP"
 
+# --- re-declare must not throw away the parts already sent ------------------
+# This is the real resume-across-app-kill path. A client that was killed has lost the
+# mediaId, so its first move on retry is to re-declare with the same clientMediaId. If
+# that started a fresh S3 multipart upload it would orphan everything already uploaded —
+# silently turning resume into start-over for exactly the user whose connection is bad
+# enough to need resuming.
+step "Re-declaring, as a killed client would"
+curl -sf -X POST "$API/v1/albums/$ALBUM_ID/uploads" "${AUTH[@]}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"clientMediaId\":\"mp-asset-1\",\"contentType\":\"image/jpeg\",\"byteSize\":$BYTES,\"originalFilename\":\"big.jpg\"}" \
+  >"$TMP/redeclare.json" || fail "re-declare failed"
+
+[ "$(jq -r '.mediaId' "$TMP/redeclare.json")" = "$MEDIA_ID" ] \
+  || fail "re-declare returned a different mediaId; the idempotency key is not working"
+[ "$(jq -r '.uploadId' "$TMP/redeclare.json")" = "$(jq -r '.uploadId' "$TMP/declare.json")" ] \
+  || fail "re-declare started a NEW S3 multipart upload, orphaning the parts already
+      uploaded. Resume after an app kill would silently restart from zero."
+pass "re-declare returned the same mediaId and the same live upload"
+
 # --- resume ----------------------------------------------------------------
 step "Asking the server what is missing"
 curl -sf "${AUTH[@]}" "$API/v1/uploads/$MEDIA_ID" >"$TMP/resume.json" || fail "resume failed"

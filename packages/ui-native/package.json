@@ -1,0 +1,38 @@
+{
+  "name": "@photu/ui-native",
+  "version": "0.0.0",
+  "private": true,
+  "//": "Consumed as SOURCE by Metro (main points at src). See docs/adr/0002.",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "files": [
+    "src"
+  ],
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@photu/tokens": "workspace:*",
+    "@photu/ui-spec": "workspace:*"
+  },
+  "peerDependencies": {
+    "expo-blur": "*",
+    "expo-image": "*",
+    "expo-linear-gradient": "*",
+    "react": "*",
+    "react-native": "*",
+    "react-native-svg": "*"
+  },
+  "devDependencies": {
+    "@types/react": "~19.2.0",
+    "expo-blur": "~57.0.2",
+    "expo-image": "~57.0.1",
+    "expo-linear-gradient": "~57.0.1",
+    "react": "19.2.3",
+    "react-native": "0.86.0",
+    "react-native-svg": "~15.15.4"
+  }
+}

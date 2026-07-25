@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "jsx": "react-jsx",
+    "lib": ["ES2023", "DOM"],
+    "types": ["react"],
+    "moduleResolution": "Bundler",
+
+    // Disabled ONLY for this package, and only because of third-party types.
+    //
+    // React Native and Expo declare optional props as `prop?: T` rather than
+    // `prop?: T | undefined`. Under exactOptionalPropertyTypes, passing an
+    // expression that may be undefined — which is the normal way to write a
+    // conditional prop in JSX — is an error at every such site. Satisfying it
+    // would mean conditional spreads throughout, which is a lot of noise for no
+    // safety gain, since these are pass-throughs to libraries that accept
+    // undefined at runtime anyway.
+    //
+    // It stays ON in packages/tokens, packages/core and packages/api-contract,
+    // where the types are ours and it catches real mistakes.
+    "exactOptionalPropertyTypes": false
+  },
+  "include": ["src/**/*.ts", "src/**/*.tsx"]
+}

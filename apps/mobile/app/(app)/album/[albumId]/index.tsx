@@ -32,7 +32,8 @@ export default function AlbumScreen() {
 
   const album = useAlbum(albumId)
   const members = useAlbumMembers(albumId)
-  const feed = useAlbumFeed(albumId, filter)
+  const processing = album.data?.processingCount ?? 0
+  const feed = useAlbumFeed(albumId, filter, processing > 0)
 
   const items = useMemo(() => feed.data?.pages.flatMap(p => p.items) ?? [], [feed.data])
 
@@ -100,7 +101,8 @@ export default function AlbumScreen() {
       <View style={{ paddingHorizontal: 16, paddingBottom: 12, gap: 8 }}>
         <Text variant="title">{album.data?.title ?? '…'}</Text>
         <Text color={t.inkMuted} variant="meta">
-          {album.data?.memberCount ?? 0} members · {album.data?.mediaCount ?? 0} photos
+          {plural(album.data?.memberCount ?? 0, 'member')} ·{' '}
+          {plural(album.data?.mediaCount ?? 0, 'photo')}
         </Text>
         <View style={{ flexDirection: 'row', gap: 6, flexWrap: 'wrap' }}>
           {locked ? (
@@ -119,6 +121,26 @@ export default function AlbumScreen() {
           )}
         </View>
       </View>
+
+      {processing > 0 && (
+        <View
+          style={{
+            marginHorizontal: 16,
+            marginBottom: 12,
+            padding: 12,
+            borderRadius: t.radii.md,
+            backgroundColor: t.accentSoft,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 10,
+          }}
+        >
+          <ActivityIndicator color={t.accent} size="small" />
+          <Text color={t.accent} variant="caption">
+            {plural(processing, 'photo')} still processing — they appear here automatically.
+          </Text>
+        </View>
+      )}
 
       {/* Filter chips. Only "All" and "Just me" are wired; the prototype's
           By person / By scene chips have no backing endpoint yet. */}
@@ -183,6 +205,12 @@ export default function AlbumScreen() {
       </ScrollView>
     </Screen>
   )
+}
+
+/** "1 member" not "1 members". Trivial, but it is the kind of thing that makes an
+ *  app feel unfinished — and it was visible on the very first real album. */
+function plural(n: number, noun: string): string {
+  return `${n} ${noun}${n === 1 ? '' : 's'}`
 }
 
 function daysLeft(windowEndsAt?: string): number {

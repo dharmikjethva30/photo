@@ -171,6 +171,16 @@ func (s *Service) claimEntitlement(
 	return sqlcgen.AlbumEntitlement{}, problem.Internal(fmt.Errorf("claim free slot: %w", err))
 }
 
+// ProcessingCount reports how many items in the album are uploaded but not yet
+// viewable, so the client knows whether to keep polling.
+func (s *Service) ProcessingCount(ctx context.Context, albumID uuid.UUID) (int64, error) {
+	n, err := s.q.CountProcessingMedia(ctx, albumID)
+	if err != nil {
+		return 0, problem.Internal(fmt.Errorf("count processing media: %w", err))
+	}
+	return n, nil
+}
+
 // Get returns an album the viewer is a member of.
 func (s *Service) Get(ctx context.Context, albumID, viewerID uuid.UUID) (sqlcgen.Album, error) {
 	member, err := s.visibility.IsAlbumMember(ctx, albumID, viewerID)

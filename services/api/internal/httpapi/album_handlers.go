@@ -28,6 +28,10 @@ type albumResponse struct {
 	MemberCount  int32     `json:"memberCount"`
 	CoverMediaID *string   `json:"coverMediaId"`
 	CreatedAt    time.Time `json:"createdAt"`
+	// ProcessingCount is how many uploads are not yet viewable. While it is
+	// non-zero the client polls, because POST /complete returns before the media
+	// worker has generated renditions.
+	ProcessingCount int64 `json:"processingCount"`
 }
 
 func albumToResponse(a sqlcgen.Album) albumResponse {
@@ -135,7 +139,14 @@ func (h *Handlers) getAlbum(w http.ResponseWriter, r *http.Request) {
 		respond(w, r, err)
 		return
 	}
-	respondJSON(w, r, http.StatusOK, albumToResponse(album))
+
+	out := albumToResponse(album)
+	// Only on the detail endpoint: the library list would need one extra query per
+	// album, and the list has no use for it.
+	if n, err := h.Albums.ProcessingCount(r.Context(), albumID); err == nil {
+		out.ProcessingCount = n
+	}
+	respondJSON(w, r, http.StatusOK, out)
 }
 
 func (h *Handlers) listAlbumMembers(w http.ResponseWriter, r *http.Request) {

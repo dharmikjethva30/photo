@@ -70,11 +70,23 @@ export function useAlbums() {
   })
 }
 
+/**
+ * The album, polled while anything is still processing.
+ *
+ * Polling rather than push because a photo becomes viewable a second or two after
+ * upload and only then; a websocket or push channel for that is disproportionate.
+ * The interval stops as soon as processingCount reaches zero, so an idle album
+ * costs nothing.
+ */
 export function useAlbum(albumID: string) {
   return useQuery({
     queryKey: queryKeys.album(albumID),
     queryFn: () => request<Album>(`/v1/albums/${albumID}`),
     enabled: Boolean(albumID),
+    refetchInterval: query => {
+      const processing = query.state.data?.processingCount ?? 0
+      return processing > 0 ? 2000 : false
+    },
   })
 }
 
@@ -110,7 +122,13 @@ export function useCreateAlbum() {
  * Keyset pagination, never offset: an offset shifts under concurrent uploads and
  * would silently duplicate or skip photos mid-scroll.
  */
-export function useAlbumFeed(albumID: string, filter: 'all' | 'just-me' = 'all') {
+export function useAlbumFeed(
+  albumID: string,
+  filter: 'all' | 'just-me' = 'all',
+  // Kept in step with useAlbum's poll so a photo appears in the grid at the same
+  // moment the header count changes, rather than one interval later.
+  pollWhileProcessing = false,
+) {
   return useInfiniteQuery({
     queryKey: queryKeys.albumFeed(albumID, filter),
     initialPageParam: undefined as string | undefined,
@@ -121,5 +139,6 @@ export function useAlbumFeed(albumID: string, filter: 'all' | 'just-me' = 'all')
     },
     getNextPageParam: last => last.nextCursor,
     enabled: Boolean(albumID),
+    refetchInterval: pollWhileProcessing ? 2000 : false,
   })
 }

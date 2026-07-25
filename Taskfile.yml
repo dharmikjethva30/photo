@@ -223,9 +223,18 @@ tasks:
       - cd {{.API_DIR}} && go run ./cmd/worker
 
   mediaworker:
-    desc: Run the Python media worker on the host
+    desc: Run the Python media worker (thumbnails). Required for photos to become viewable.
+    env:
+      # The worker only ever talks to S3 server-side, so it uses the INTERNAL
+      # endpoint and never presigns — the two-endpoint split in ADR 0003 does not
+      # apply to it.
+      S3_ENDPOINT_INTERNAL: http://localhost:4566
     cmds:
-      - cd {{.WORKER_DIR}} && uv run mediaworker --kinds=thumbnail,face
+      # `face` is deliberately NOT in the list: that handler lands in M4 and would
+      # pull ~300MB of ONNX weights. Face jobs stay queued until then, which is why
+      # media_items.face_proc_state stays 'queued' and face-privacy albums show only
+      # your own uploads for now.
+      - cd {{.WORKER_DIR}} && uv run python -m mediaworker --kinds=thumbnail
 
   mobile:
     desc: Start Metro for the mobile app (dev client)
@@ -268,9 +277,9 @@ tasks:
       - |
         echo
         echo "Infra and emulator are up. Now run these in separate terminals:"
-        echo "  task api        # the Go API on :8080"
-        echo "  task mobile     # Metro bundler"
-        echo "  task mobile:android   # build + install on the emulator"
+        echo "  task api:emulator   # the Go API, emitting URLs the emulator can reach"
+        echo "  task mediaworker    # thumbnails — without it photos never become viewable"
+        echo "  task mobile:android # build + install on the emulator"
         echo
         echo "See docs/running-locally.md"
 
@@ -288,8 +297,12 @@ tasks:
       - test "$({{.ADB}} shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1"
     cmds:
       - |
+        # -no-snapshot, not -no-snapshot-save: loading a snapshot taken under a
+        # different graphics backend logs "snapshot was created with gfxstream=0,
+        # but this emulator has gfxstream=1" and the AVD has died mid-session more
+        # than once. A cold boot costs ~35s and is reliable.
         nohup "$ANDROID_HOME/emulator/emulator" -avd {{.AVD}} \
-          -no-snapshot-save -no-boot-anim -gpu auto >/tmp/photu-emulator.log 2>&1 &
+          -no-snapshot -no-boot-anim -gpu auto >/tmp/photu-emulator.log 2>&1 &
         printf 'waiting for boot'
         for i in $(seq 1 60); do
           if [ "$({{.ADB}} shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then

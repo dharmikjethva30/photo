@@ -81,3 +81,15 @@ UPDATE albums SET cover_media_id = $2 WHERE id = $1;
 -- the scaling path in docs/adr/0005, and bumping it from the start means the
 -- counter is already correct if that path is ever taken.
 UPDATE albums SET visibility_generation = visibility_generation + 1 WHERE id = $1;
+
+-- name: CountProcessingMedia :one
+-- Media that has been uploaded but is not yet viewable.
+--
+-- The client needs this: POST /complete returns while an item is still
+-- 'uploaded', and the media worker flips it to 'ready' moments later. Without a
+-- signal the app shows a stale feed until the user pulls to refresh — the photo
+-- looks lost when it is merely still being processed.
+SELECT count(*) FROM media_items
+ WHERE album_id = $1
+   AND deleted_at IS NULL
+   AND state IN ('pending', 'uploaded');

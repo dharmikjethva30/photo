@@ -182,6 +182,22 @@ while IFS= read -r line; do PUT_ARGS+=(-H "$line"); done < <(
   jq -r '.upload.headers | to_entries[] | "\(.key): \(.value)"' "$TMP/declare.json"
 )
 
+# Guard the trap this script cannot otherwise explain.
+#
+# The API signs upload URLs for S3_ENDPOINT_PUBLIC, which `task api:emulator` sets
+# to 10.0.2.2 and `task api:device` sets to the LAN IP — neither routable from this
+# machine. The PUT then fails with curl code 000 (could not connect), which reads
+# like S3 being down rather than a deliberately different target host. And the URL
+# cannot simply be rewritten: SigV4 covers the Host header. See docs/adr/0003.
+PUT_HOST=$(printf '%s' "$PUT_URL" | sed -E 's#^https?://([^/:]+).*#\1#')
+case "$PUT_HOST" in
+  localhost|127.0.0.1) : ;;
+  *)
+    fail "the API signed this upload for host '$PUT_HOST', which this machine cannot reach.
+      That means the API is running in emulator or device mode. Restart it with
+      \`task api\` (localhost) before running the smoke test." ;;
+esac
+
 code=$(curl -s -o "$TMP/put.out" -w '%{http_code}' -X PUT "${PUT_ARGS[@]}" \
   --data-binary "@$FILE" "$PUT_URL")
 [ "$code" = "200" ] || fail "S3 PUT returned $code: $(head -c 400 "$TMP/put.out")"
@@ -216,20 +232,50 @@ pass "thumbnail and face jobs enqueued"
 # and MUST NOT appear: an unprocessed photo has zero detected faces, which under
 # face-privacy would otherwise read as "no people in it".
 step "Checking the feed"
-curl -sf "${AUTH[@]}" "$API/v1/albums/$ALBUM_ID/media" >"$TMP/feed_before.json" || fail "feed failed"
-jq -e '.items | length == 0' "$TMP/feed_before.json" >/dev/null \
-  || fail "an unprocessed photo appeared in the feed; it must not be visible until ready"
-pass "unprocessed photo correctly absent from the feed"
 
-# Stand in for the media worker, which lands next. Renditions are faked here ONLY
-# so this script can prove the read path; the real worker generates them.
-docker compose exec -T postgres psql -U photu -d photu -q >/dev/null 2>&1 <<SQL
-UPDATE media_items SET state = 'ready', face_proc_state = 'done' WHERE id = '$MEDIA_ID';
-INSERT INTO media_renditions (media_item_id, name, storage_key, width, height, byte_size)
-SELECT '$MEDIA_ID', 'thumb_256', storage_key, 256, 192, byte_size
-  FROM media_items WHERE id = '$MEDIA_ID'
-ON CONFLICT DO NOTHING;
-SQL
+# Assert "not-ready media is invisible" with a DECLARED-BUT-NEVER-UPLOADED item.
+#
+# This used to assert it against the item above, right after /complete — which
+# raced the media worker, since it promotes an `uploaded` item to `ready` in
+# milliseconds. A `pending` item is deterministic: the worker only ever claims jobs
+# for completed uploads, so nothing can promote it out from under the assertion.
+curl -sf -X POST "$API/v1/albums/$ALBUM_ID/uploads" "${AUTH[@]}" \
+  -H 'Content-Type: application/json' \
+  -d "{\"clientMediaId\":\"never-uploaded\",\"contentType\":\"$CONTENT_TYPE\",\"byteSize\":$BYTES}" \
+  >"$TMP/pending.json" || fail "declare of the pending fixture failed"
+PENDING_ID=$(jq -r '.mediaId' "$TMP/pending.json")
+
+curl -sf "${AUTH[@]}" "$API/v1/albums/$ALBUM_ID/media" >"$TMP/feed_before.json" || fail "feed failed"
+jq -e --arg id "$PENDING_ID" 'all(.items[]; .id != $id)' "$TMP/feed_before.json" >/dev/null \
+  || fail "a photo whose bytes were never uploaded appeared in the feed.
+      Unprocessed media has zero detected faces, which under face-privacy reads as
+      'no people in it' — so it must stay invisible until it is ready."
+pass "media that is not ready is absent from the feed"
+
+# Wait for the REAL media worker. This is the end-to-end path: no faked renditions.
+step "Waiting for the media worker"
+ready=""
+for _ in $(seq 1 30); do
+  state=$(docker compose exec -T postgres psql -U photu -d photu -tAc \
+    "SELECT state FROM media_items WHERE id = '$MEDIA_ID'" 2>/dev/null | tr -d '[:space:]')
+  if [ "$state" = "ready" ]; then ready=1; break; fi
+  sleep 1
+done
+[ -n "$ready" ] || fail "the photo never became ready after 30s.
+      Is the media worker running? Start it with \`task mediaworker\`."
+rends=$(docker compose exec -T postgres psql -U photu -d photu -tAc \
+  "SELECT count(*) FROM media_renditions WHERE media_item_id = '$MEDIA_ID'" 2>/dev/null | tr -d '[:space:]')
+[ "$rends" = "2" ] || fail "expected 2 renditions (thumb_256, preview_1024), found ${rends:-0}"
+pass "worker generated 2 renditions and marked the photo ready"
+
+# face_proc_state must still be 'queued': the face handler is M4, and setting it
+# early would make every photo read as "no people detected" and be visible to the
+# whole album under face-privacy.
+fps=$(docker compose exec -T postgres psql -U photu -d photu -tAc \
+  "SELECT face_proc_state FROM media_items WHERE id = '$MEDIA_ID'" 2>/dev/null | tr -d '[:space:]')
+[ "$fps" = "queued" ] || fail "face_proc_state is '$fps', expected 'queued'.
+      The thumbnail worker must NOT mark face processing done — see docs/adr/0005."
+pass "face processing left queued (face-privacy stays fail-closed)"
 
 curl -sf "${AUTH[@]}" "$API/v1/albums/$ALBUM_ID/media" >"$TMP/feed.json" || fail "feed failed"
 jq -e '.items | length == 1' "$TMP/feed.json" >/dev/null \

@@ -30,6 +30,13 @@ type Querier interface {
 	CompleteUploadSession(ctx context.Context, mediaItemID uuid.UUID) error
 	CountAlbumMembers(ctx context.Context, albumID uuid.UUID) (int64, error)
 	CountFreeSlotsUsed(ctx context.Context, userID uuid.UUID) (int64, error)
+	// Media that has been uploaded but is not yet viewable.
+	//
+	// The client needs this: POST /complete returns while an item is still
+	// 'uploaded', and the media worker flips it to 'ready' moments later. Without a
+	// signal the app shows a stale feed until the user pulls to refresh — the photo
+	// looks lost when it is merely still being processed.
+	CountProcessingMedia(ctx context.Context, albumID uuid.UUID) (int64, error)
 	CreateAlbum(ctx context.Context, arg CreateAlbumParams) (Album, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	CreateUploadSession(ctx context.Context, arg CreateUploadSessionParams) (UploadSession, error)

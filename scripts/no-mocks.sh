@@ -11,6 +11,11 @@
 # punish exactly the documentation we want. Lines whose first non-space
 # character starts a comment (`//`, `*`, `/*`, `#`) are skipped, as are
 # docs/prototype/ (the reference copy) and generated output.
+#
+# `app/_dev/**` is also exempt. Those routes (the component gallery, the palette
+# matrix) exist to render primitives on a device and genuinely need sample people
+# to draw avatars with — they are development tooling, not product screens, and
+# the rule this gate enforces is that PRODUCT screens are wired to the API.
 set -uo pipefail
 
 patterns=(
@@ -29,6 +34,7 @@ for p in "${patterns[@]}"; do
     grep -rIn --fixed-strings \
       --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=.next \
       --exclude-dir=.expo --exclude-dir=generated --exclude-dir=prototype \
+      --exclude-dir=_dev \
       -- "$p" "${roots[@]}" 2>/dev/null \
       | awk -F: '
           {

@@ -122,6 +122,26 @@ func (q *Queries) CountAlbumMembers(ctx context.Context, albumID uuid.UUID) (int
 	return count, err
 }
 
+const countProcessingMedia = `-- name: CountProcessingMedia :one
+SELECT count(*) FROM media_items
+ WHERE album_id = $1
+   AND deleted_at IS NULL
+   AND state IN ('pending', 'uploaded')
+`
+
+// Media that has been uploaded but is not yet viewable.
+//
+// The client needs this: POST /complete returns while an item is still
+// 'uploaded', and the media worker flips it to 'ready' moments later. Without a
+// signal the app shows a stale feed until the user pulls to refresh — the photo
+// looks lost when it is merely still being processed.
+func (q *Queries) CountProcessingMedia(ctx context.Context, albumID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countProcessingMedia, albumID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const createAlbum = `-- name: CreateAlbum :one
 INSERT INTO albums (
   owner_user_id, title, template, privacy_mode,

@@ -43,6 +43,13 @@ export interface Album {
   memberCount: number
   coverMediaId: string | null
   createdAt: string
+  /**
+   * Uploads that are not yet viewable. POST /complete returns while an item is
+   * still `uploaded`; the media worker generates renditions moments later. While
+   * this is non-zero the client polls, otherwise a freshly uploaded photo looks
+   * lost until the user pulls to refresh.
+   */
+  processingCount?: number
 }
 
 export interface AlbumMember {

@@ -22,9 +22,18 @@ vars:
   COMPOSE: docker compose
   API_DIR: services/api
   WORKER_DIR: services/mediaworker
+  AVD: photu-android-36
+  ADB: '{{.ANDROID_HOME | default (printf "%s/Library/Android/sdk" (env "HOME"))}}/platform-tools/adb'
 
 env:
   LAN_IP: "{{.LAN_IP}}"
+  # React Native 0.86's Gradle requires JDK 17 specifically. Set here rather than
+  # in the developer's shell profile, so a newer JDK stays the system default for
+  # other work. `task doctor` reports if 17 is missing.
+  JAVA_HOME:
+    sh: brew --prefix openjdk@17 2>/dev/null | sed 's|$|/libexec/openjdk.jdk/Contents/Home|'
+  ANDROID_HOME: '{{.ANDROID_HOME | default (printf "%s/Library/Android/sdk" (env "HOME"))}}'
+  ANDROID_SDK_ROOT: '{{.ANDROID_HOME | default (printf "%s/Library/Android/sdk" (env "HOME"))}}'
 
 tasks:
   default:
@@ -195,6 +204,53 @@ tasks:
     desc: Regenerate ios/ and android/ from app.config.ts
     cmds:
       - pnpm --filter @photu/mobile exec expo prebuild --clean
+
+  mobile:android:
+    desc: Build and install the app on the running emulator
+    cmds:
+      - pnpm --filter @photu/mobile exec expo run:android --device {{.AVD}}
+
+  # -------------------------------------------------------------------- android
+
+  android:setup:
+    desc: Install JDK 17, Android SDK and create the AVD (idempotent, slow first run)
+    cmds:
+      - bash scripts/setup-android.sh
+
+  emulator:
+    desc: Boot the Android emulator in the background
+    status:
+      # Already booted — adb reports 1 only once the system is fully up.
+      - test "$({{.ADB}} shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1"
+    cmds:
+      - |
+        nohup "$ANDROID_HOME/emulator/emulator" -avd {{.AVD}} \
+          -no-snapshot-save -no-boot-anim -gpu auto >/tmp/photu-emulator.log 2>&1 &
+        printf 'waiting for boot'
+        for i in $(seq 1 60); do
+          if [ "$({{.ADB}} shell getprop sys.boot_completed 2>/dev/null | tr -d '\r')" = "1" ]; then
+            echo " — up after ~$((i*3))s"; exit 0
+          fi
+          printf '.'; sleep 3
+        done
+        echo; echo "emulator did not boot within 180s; see /tmp/photu-emulator.log"; exit 1
+
+  emulator:stop:
+    desc: Shut the emulator down
+    cmds:
+      - "{{.ADB}} emu kill || true"
+
+  shot:
+    desc: Screenshot the emulator (task shot -- name)
+    cmds:
+      - mkdir -p tmp/shots
+      - "{{.ADB}} exec-out screencap -p > tmp/shots/{{.CLI_ARGS | default \"shot\"}}.png"
+      - echo "wrote tmp/shots/{{.CLI_ARGS | default \"shot\"}}.png"
+
+  logcat:
+    desc: Tail the app's logs from the emulator
+    cmds:
+      - "{{.ADB}} logcat --pid=$({{.ADB}} shell pidof -s app.photu.mobile)"
 
   web:
     desc: Start the Next.js web app

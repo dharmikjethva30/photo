@@ -1,0 +1,113 @@
+version: "2"
+
+linters:
+  default: standard
+  enable:
+    - bodyclose
+    - depguard
+    - errorlint
+    - gocritic
+    - gosec
+    - misspell
+    - nilerr
+    - noctx
+    - revive
+    - rowserrcheck
+    - sqlclosecheck
+    - unconvert
+    - wastedassign
+
+  settings:
+    depguard:
+      rules:
+        # The domain layer holds the album lifecycle state machine, entitlement
+        # arithmetic, and the visibility policy. Keeping it free of HTTP and SQL
+        # is what lets those be unit-tested with plain fakes, and stops business
+        # rules leaking into handlers or queries.
+        domain-is-pure:
+          list-mode: lax
+          files:
+            - "**/internal/domain/**"
+          deny:
+            - pkg: net/http
+              desc: "domain must not know about transport — move this to internal/httpapi"
+            - pkg: github.com/go-chi/chi/v5
+              desc: "domain must not know about routing"
+            - pkg: github.com/jackc/pgx/v5
+              desc: "domain must not know about SQL — move this to internal/adapter/postgres"
+            - pkg: github.com/aws/aws-sdk-go-v2
+              desc: "domain must not know about S3 — define a port and implement it in internal/adapter"
+
+        # Handlers parse, delegate, and render. A handler reaching for pgx means
+        # a query is being written in the transport layer.
+        http-has-no-sql:
+          list-mode: lax
+          files:
+            - "**/internal/httpapi/**"
+          deny:
+            - pkg: github.com/jackc/pgx/v5/pgxpool
+              desc: "no SQL in handlers — depend on a service in internal/app"
+
+    errorlint:
+      errorf: true
+      asserts: true
+      comparison: true
+
+    gosec:
+      excludes:
+        # G404: math/rand is never used for tokens here (crypto/rand is), and the
+        # rule fires on legitimate jitter/backoff.
+        - G404
+
+    revive:
+      rules:
+        - name: exported
+          # Exported symbols in internal/ are package-internal API; requiring a
+          # doc comment on every one is noise. Package docs are required instead.
+          disabled: true
+
+    gocritic:
+      enabled-tags:
+        - diagnostic
+        - performance
+        - style
+      disabled-checks:
+        - ifElseChain
+        # hugeParam fires on Config, Deps and zerolog.Logger. All three are
+        # passed by value ON PURPOSE: Config and Deps are immutable startup data
+        # (a pointer would invite mutation from a handler), and by-value
+        # zerolog.Logger is the library's own idiom for deriving sub-loggers.
+        # These are constructed once per process or once per request, so the copy
+        # cost is irrelevant and the immutability is worth more.
+        - hugeParam
+
+  exclusions:
+    rules:
+      # Tests legitimately do things production code should not: fixed-seed
+      # randomness, ignored errors in helpers, long table-driven functions.
+      - path: _test\.go
+        linters:
+          - gosec
+          - noctx
+          - bodyclose
+      # Generated code is not ours to lint.
+      - path: (\.gen\.go|/gen/)
+        linters:
+          - revive
+          - gocritic
+          - errorlint
+          - gosec
+          - unconvert
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  settings:
+    goimports:
+      local-prefixes:
+        - github.com/dharmikjethva30/photo/services/api
+
+issues:
+  max-issues-per-linter: 0
+  max-same-issues: 0

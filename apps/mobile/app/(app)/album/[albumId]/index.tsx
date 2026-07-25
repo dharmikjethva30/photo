@@ -295,8 +295,41 @@ function PhotoTile({ item, size, onPress }: { item: FeedItem; size: number; onPr
           <Icon color={t.accentInk} name="face" size={10} />
         </View>
       )}
+      {item.kind === 'video' && (
+        // Play glyph + duration, so a video reads as a video in the grid. The scrim
+        // keeps white legible over a bright poster frame.
+        <View
+          style={{
+            position: 'absolute',
+            bottom: 4,
+            right: 4,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 3,
+            paddingHorizontal: 5,
+            paddingVertical: 2,
+            borderRadius: 999,
+            backgroundColor: 'rgba(0,0,0,0.55)',
+          }}
+        >
+          <Icon color="#fff" name="play" size={9} />
+          {item.durationMs != null && (
+            <Text color="#fff" variant="monoBadge">
+              {formatDuration(item.durationMs)}
+            </Text>
+          )}
+        </View>
+      )}
     </Pressable>
   )
+}
+
+/** ms -> "M:SS", e.g. 3000 -> "0:03", 72000 -> "1:12". */
+function formatDuration(ms: number): string {
+  const total = Math.round(ms / 1000)
+  const m = Math.floor(total / 60)
+  const s = total % 60
+  return `${m}:${s.toString().padStart(2, '0')}`
 }
 
 function EmptyFeed({ filter, privacyMode }: { filter: 'all' | 'just-me'; privacyMode?: string }) {

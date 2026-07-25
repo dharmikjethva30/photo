@@ -415,6 +415,11 @@ tasks:
     cmds:
       - bash scripts/smoke-multipart.sh
 
+  smoke:media:
+    desc: 'HEIC + video gate — decode, poster, probe; originals byte-exact (needs ffmpeg)'
+    cmds:
+      - bash scripts/smoke-media.sh
+
   # --------------------------------------------------------------------- misc
 
   keys:dev:

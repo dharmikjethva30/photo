@@ -31,7 +31,7 @@ export default function UploadScreen() {
     }
 
     const picked = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ['images'],
+      mediaTypes: ['images', 'videos'],
       allowsMultipleSelection: true,
       selectionLimit: 12,
       // No editing and maximum quality: the product promise is the ORIGINAL file.
@@ -51,6 +51,8 @@ export default function UploadScreen() {
         height: a.height,
         creationTime: (a as { creationTime?: number }).creationTime ?? null,
         assetId: a.assetId ?? null,
+        // Picker reports video length in ms; null for a photo.
+        durationMs: a.duration ?? null,
       })),
     )
   }
@@ -70,6 +72,7 @@ export default function UploadScreen() {
         width: a.width,
         height: a.height,
         creationTime: a.creationTime,
+        durationMs: a.durationMs ?? null,
       })),
     )
     // Hand off to the queue screen. dismissAll first so we do not stack the queue on

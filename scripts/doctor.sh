@@ -37,6 +37,10 @@ need_cmd task   "brew install go-task"             'task --version'
 need_cmd sqlc   "brew install sqlc"                'sqlc version'
 need_cmd goose  "brew install goose"               'goose --version'
 need_cmd docker "install Docker Desktop"           'docker --version'
+# The media worker shells out to these for the video path (probe + poster frame).
+# Photos need neither, so this is required-for-video rather than required-to-boot.
+need_cmd ffprobe "brew install ffmpeg (needed for video uploads)" 'ffprobe -version'
+need_cmd ffmpeg  "brew install ffmpeg (needed for video uploads)" 'ffmpeg -version'
 
 if docker info >/dev/null 2>&1; then
   pass "docker daemon running"

@@ -84,6 +84,9 @@ export interface QueueItem {
   width?: number
   height?: number
   creationTime?: number | null
+  /** Video length in ms; absent for a photo. Carried so the queue can re-declare a
+   *  video after an app kill without re-reading the asset. */
+  durationMs?: number | null
   status: QueueStatus
   /** 0..1 within this file while uploading. */
   progress: number

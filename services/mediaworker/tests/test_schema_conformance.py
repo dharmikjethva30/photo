@@ -43,9 +43,13 @@ REQUIRED: dict[str, set[str]] = {
         "byte_size",
         "width",
         "height",
+        # Written by the video path with the PROBED duration (the API stored a
+        # client-declared one at upload).
+        "duration_ms",
         "capture_time",
         "capture_time_exif",
         "capture_time_source",
+        "timezone_offset_min",
         # NOT written by this worker — asserted present because the visibility
         # predicate depends on it and the face handler (M4) will set it.
         "face_proc_state",
@@ -58,6 +62,15 @@ REQUIRED: dict[str, set[str]] = {
         "width",
         "height",
         "byte_size",
+    },
+    # Written by the video path (derive._handle_video).
+    "video_metadata": {
+        "media_item_id",
+        "codec",
+        "bitrate",
+        "frame_rate",
+        "rotation_deg",
+        "has_audio",
     },
 }
 

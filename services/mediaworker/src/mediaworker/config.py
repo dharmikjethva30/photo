@@ -70,6 +70,17 @@ class Settings(BaseSettings):
     # 80 MP is roughly 4x the largest phone sensor shipping today.
     max_image_pixels: int = 80_000_000
 
+    # The video duration cap, in milliseconds. The API also enforces this at declare
+    # time, but that value is CLIENT-DECLARED — the worker probes the real duration and
+    # is the actual trust boundary. Same env var and default (60s) as the Go config's
+    # MAX_VIDEO_DURATION_MS so the two cannot disagree.
+    max_video_duration_ms: int = Field(default=60_000, alias="MAX_VIDEO_DURATION_MS")
+
+    # ffmpeg/ffprobe binaries. On PATH by default; overridable for a container that
+    # ships them elsewhere.
+    ffprobe_path: str = "ffprobe"
+    ffmpeg_path: str = "ffmpeg"
+
 
 def load() -> Settings:
     return Settings()  # type: ignore[call-arg]  # values come from the environment

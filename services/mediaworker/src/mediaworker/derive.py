@@ -152,15 +152,7 @@ def handle_thumbnail(ctx: Context, job: Job) -> None:
         return
 
     if item["kind"] == "video":
-        # Video renditions (poster frame + transcode) need ffmpeg and are not in
-        # this milestone. Deliberately leaving state at 'uploaded' keeps the item
-        # invisible to everyone but its uploader, which is the correct behaviour
-        # for a photo we cannot yet display — whereas raising here would put a
-        # video at the head of the queue on a permanent retry loop.
-        log.info(
-            "video renditions not implemented; job completed without work",
-            extra={"job_id": job.id, "media_item_id": job.media_item_id},
-        )
+        _handle_video(ctx, job, item)
         return
 
     album_id = str(item["album_id"])
@@ -232,11 +224,161 @@ def handle_thumbnail(ctx: Context, job: Job) -> None:
     )
 
 
+# --- video -----------------------------------------------------------------
+
+# Video renditions all come from ONE poster frame — no transcode (docs/adr and the
+# unit-economics risk: transcoding 4K HEVC is the most expensive thing we could add and
+# violates "no compression ever"). thumb_256 feeds the grid exactly like a photo;
+# `poster` is the still the player shows before playback and the frame M4 will run face
+# detection on. Ordered largest-first, because _render derives each from the previous.
+_VIDEO_RENDITIONS: tuple[tuple[str, int], ...] = (("poster", 1024), ("thumb_256", 256))
+
+_UPSERT_VIDEO_METADATA = """
+INSERT INTO video_metadata
+       (media_item_id, codec, bitrate, frame_rate, rotation_deg, has_audio)
+VALUES (%(media_item_id)s, %(codec)s, %(bitrate)s, %(frame_rate)s,
+        %(rotation_deg)s, %(has_audio)s)
+ON CONFLICT (media_item_id)
+DO UPDATE SET codec = EXCLUDED.codec,
+              bitrate = EXCLUDED.bitrate,
+              frame_rate = EXCLUDED.frame_rate,
+              rotation_deg = EXCLUDED.rotation_deg,
+              has_audio = EXCLUDED.has_audio
+"""
+
+# Like _MARK_READY but also writes the PROBED duration. The API stored a
+# client-declared duration_ms at upload; this replaces it with the real one, because
+# the client's number is a hint and the probe is the truth.
+_MARK_VIDEO_READY = """
+UPDATE media_items
+   SET state = 'ready',
+       width = %(width)s,
+       height = %(height)s,
+       duration_ms = %(duration_ms)s
+ WHERE id = %(id)s
+"""
+
+
+def _handle_video(ctx: Context, job: Job, item: Any) -> None:
+    """Probe a video, extract a poster frame, and derive renditions from it.
+
+    Nothing here re-encodes the video; the original is streamed for playback. The
+    poster frame is the only pixels produced, and the thumbnails are made from it so a
+    video sits in the feed grid identically to a photo.
+    """
+    from . import video
+
+    album_id = str(item["album_id"])
+    storage_key = item["storage_key"]
+
+    with tempfile.TemporaryDirectory(prefix="mediaworker-vid-") as tmp:
+        tmpdir = Path(tmp)
+        original = tmpdir / "original"
+        try:
+            ctx.store.download(ctx.settings.media_bucket, storage_key, original)
+        except ObjectNotFound as exc:
+            raise PermanentFailure(f"original missing: {storage_key}") from exc
+
+        facts = video.probe(ctx.settings.ffprobe_path, original)
+
+        # The worker is the real cap: the API's check was against a client-declared
+        # number. A clip over the limit is rejected rather than published.
+        if facts.duration_ms > ctx.settings.max_video_duration_ms:
+            raise PermanentFailure(
+                f"video is {facts.duration_ms}ms, over the "
+                f"{ctx.settings.max_video_duration_ms}ms cap"
+            )
+
+        poster = tmpdir / "poster-frame.jpg"
+        video.extract_poster(
+            ctx.settings.ffmpeg_path,
+            original,
+            poster,
+            video.poster_timestamp(facts.duration_ms),
+        )
+
+        # Reuse the photo pipeline on the poster frame: sRGB conversion, alpha
+        # flattening, metadata strip, the lot. The poster JPEG has no EXIF, so
+        # capture_time comes back empty — the client hint already ordered the item.
+        img_facts, renditions = _render(
+            poster,
+            tmpdir,
+            album_id=album_id,
+            media_id=job.media_item_id,
+            specs=_VIDEO_RENDITIONS,
+        )
+
+        for rend in renditions:
+            ctx.store.upload(
+                ctx.settings.media_bucket,
+                rend.key,
+                tmpdir / f"{rend.name}.jpg",
+                _JPEG_CONTENT_TYPE,
+            )
+
+    # One transaction: rendition rows, the video_metadata row, and the state flip. Same
+    # reasoning as the photo path — a half-written set is a broken video for viewers.
+    with ctx.conn.transaction(), ctx.conn.cursor() as cur:
+        for rend in renditions:
+            cur.execute(
+                _UPSERT_RENDITION,
+                {
+                    "media_item_id": job.media_item_id,
+                    "name": rend.name,
+                    "storage_key": rend.key,
+                    "content_type": _JPEG_CONTENT_TYPE,
+                    "width": rend.width,
+                    "height": rend.height,
+                    "byte_size": rend.byte_size,
+                },
+            )
+        cur.execute(
+            _UPSERT_VIDEO_METADATA,
+            {
+                "media_item_id": job.media_item_id,
+                "codec": facts.codec,
+                "bitrate": facts.bitrate,
+                "frame_rate": facts.frame_rate,
+                "rotation_deg": facts.rotation_deg,
+                "has_audio": facts.has_audio,
+            },
+        )
+        cur.execute(
+            _MARK_VIDEO_READY,
+            {
+                "id": job.media_item_id,
+                # Displayed dimensions of the poster. For a rotated video the poster
+                # frame is already upright (ffmpeg autorotates), so these match how the
+                # video plays — which is what the grid needs to reserve the cell.
+                "width": img_facts.width,
+                "height": img_facts.height,
+                "duration_ms": facts.duration_ms,
+            },
+        )
+
+    log.info(
+        "video processed",
+        extra={
+            "job_id": job.id,
+            "media_item_id": job.media_item_id,
+            "duration_ms": facts.duration_ms,
+            "codec": facts.codec,
+            "rotation_deg": facts.rotation_deg,
+            "renditions": [r.name for r in renditions],
+        },
+    )
+
+
 # --- decoding and resizing -------------------------------------------------
 
 
 def _render(
-    original: Path, outdir: Path, *, album_id: str, media_id: str
+    original: Path,
+    outdir: Path,
+    *,
+    album_id: str,
+    media_id: str,
+    specs: tuple[tuple[str, int], ...] = _RENDITIONS,
 ) -> tuple[ImageFacts, list[Rendition]]:
     try:
         with Image.open(original) as src:
@@ -263,7 +405,7 @@ def _render(
 
             renditions: list[Rendition] = []
             work = img
-            for name, edge in _RENDITIONS:
+            for name, edge in specs:
                 # thumbnail() mutates in place and never upscales, so a 180px
                 # original yields a 180px "thumb_256". Both rows still exist,
                 # which is what the API's lookup requires.

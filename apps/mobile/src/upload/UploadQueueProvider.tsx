@@ -67,6 +67,7 @@ export function UploadQueueProvider({ children }: { children: ReactNode }) {
         width: item.width,
         height: item.height,
         creationTime: item.creationTime,
+        durationMs: item.durationMs,
         assetId: item.id,
       },
       fraction => q.setProgress(item.id, fraction),

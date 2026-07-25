@@ -2,11 +2,13 @@ import { overlay, viewer as viewerTokens } from '@photu/tokens'
 import { Icon, Text } from '@photu/ui-native'
 import { Image } from 'expo-image'
 import { useLocalSearchParams, useRouter } from 'expo-router'
+import { useVideoPlayer, VideoView } from 'expo-video'
 import { useMemo } from 'react'
 import { Dimensions, Pressable, StatusBar, View } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
+import { API_BASE_URL } from '../../../../../src/api/client'
 import { useAlbumFeed } from '../../../../../src/api/hooks'
 import { useSessionStore } from '../../../../../src/auth/session'
 
@@ -31,6 +33,26 @@ export default function PhotoViewer() {
   const { accessToken } = useSessionStore()
 
   const { width, height } = Dimensions.get('window')
+
+  const isVideo = item?.kind === 'video'
+
+  // Playback streams the ORIGINAL — no transcode, so the bytes on screen are the bytes
+  // that were uploaded. The /original endpoint re-checks visibility and 302s to a
+  // short-lived presigned S3 URL; the bearer token rides the first hop, and expo-video
+  // follows the redirect to the (unauthenticated) presigned URL itself.
+  //
+  // useVideoPlayer is called unconditionally (rules of hooks) with a null source for a
+  // photo, which simply creates an idle player.
+  const videoSource =
+    isVideo && item
+      ? {
+          uri: `${API_BASE_URL}/v1/media/${item.id}/original`,
+          headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+        }
+      : null
+  const player = useVideoPlayer(videoSource, p => {
+    p.loop = false
+  })
 
   // Pinch to zoom and pan, with double-tap to toggle. Reanimated so the gesture runs
   // on the UI thread; doing this in JS drops frames on a large image.
@@ -98,24 +120,38 @@ export default function PhotoViewer() {
     <View style={{ flex: 1, backgroundColor: viewerTokens.bg }}>
       <StatusBar barStyle="light-content" />
 
-      <GestureDetector gesture={gesture}>
-        <Animated.View style={[{ flex: 1, alignItems: 'center', justifyContent: 'center' }]}>
-          {item && (
-            <Animated.View style={imageStyle}>
-              <Image
-                cachePolicy="memory-disk"
-                contentFit="contain"
-                source={{
-                  uri: item.previewUrl,
-                  headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
-                }}
-                style={{ width, height: height * 0.8 }}
-                transition={160}
-              />
-            </Animated.View>
-          )}
-        </Animated.View>
-      </GestureDetector>
+      {isVideo ? (
+        // Native controls (play/scrub/mute) rather than the photo pinch-zoom gesture —
+        // a video needs a transport, not a magnifier. The poster frame shows while the
+        // first bytes stream in.
+        <View style={{ flex: 1, alignItems: 'center', justifyContent: 'center' }}>
+          <VideoView
+            contentFit="contain"
+            nativeControls
+            player={player}
+            style={{ width, height: height * 0.8 }}
+          />
+        </View>
+      ) : (
+        <GestureDetector gesture={gesture}>
+          <Animated.View style={[{ flex: 1, alignItems: 'center', justifyContent: 'center' }]}>
+            {item && (
+              <Animated.View style={imageStyle}>
+                <Image
+                  cachePolicy="memory-disk"
+                  contentFit="contain"
+                  source={{
+                    uri: item.previewUrl,
+                    headers: accessToken ? { Authorization: `Bearer ${accessToken}` } : undefined,
+                  }}
+                  style={{ width, height: height * 0.8 }}
+                  transition={160}
+                />
+              </Animated.View>
+            )}
+          </Animated.View>
+        </GestureDetector>
+      )}
 
       {/* Top bar: glass back button and attribution, matching the prototype. */}
       <View

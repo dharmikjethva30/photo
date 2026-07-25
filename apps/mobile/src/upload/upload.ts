@@ -24,6 +24,8 @@ export interface PickedAsset {
   creationTime?: number | null
   /** A stable local identifier, used as the idempotency key. */
   assetId?: string | null
+  /** Video length in ms. REQUIRED by the server for a video; null/absent for a photo. */
+  durationMs?: number | null
 }
 
 /**
@@ -45,6 +47,15 @@ export async function uploadAsset(
   if (byteSize <= 0) throw new Error('That photo appears to be empty.')
 
   const contentType = normaliseMime(asset.mimeType, asset.fileName)
+  const isVideo = contentType.startsWith('video/')
+
+  // A video must declare its duration — the server rejects a video without one, and it
+  // is also how the 60s cap is checked before a byte is uploaded. The picker gives it in
+  // ms. A video that somehow arrives without a duration is failed here rather than
+  // sent to certain rejection at declare.
+  if (isVideo && (asset.durationMs == null || asset.durationMs <= 0)) {
+    throw new Error('That video has no readable duration and cannot be uploaded.')
+  }
 
   // The idempotency key. Prefer the OS asset id so re-picking the same photo after a
   // failed attempt resumes rather than duplicating; fall back to filename plus size,
@@ -60,6 +71,7 @@ export async function uploadAsset(
       originalFilename: asset.fileName ?? undefined,
       width: asset.width,
       height: asset.height,
+      durationMs: isVideo ? asset.durationMs : undefined,
       captureTime: asset.creationTime ? new Date(asset.creationTime).toISOString() : undefined,
       // The device's CURRENT UTC offset — not necessarily the offset at capture time,
       // but far better than assuming UTC for a feed ordered by capture time across

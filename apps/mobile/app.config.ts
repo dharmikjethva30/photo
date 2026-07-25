@@ -90,6 +90,9 @@ const config: ExpoConfig = {
       },
     ],
     ['expo-font', { fonts: FONTS }],
+    // Video playback in the viewer (M2.4). The plugin wires the native player and,
+    // on Android, the ExoPlayer dependency; without it VideoView is a no-op.
+    'expo-video',
     // NOTE: react-native-worklets/plugin does NOT belong here. It is a BABEL
     // plugin (see babel.config.js) — listing it as an Expo config plugin makes
     // prebuild fail while evaluating this file, with an error about

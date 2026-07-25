@@ -214,9 +214,41 @@ tasks:
       - pnpm --filter @photu/mobile exec expo prebuild --clean
 
   mobile:android:
-    desc: Build and install the app on the running emulator
+    desc: Build, install and launch the app on the running emulator
+    deps: [emulator]
     cmds:
-      - pnpm --filter @photu/mobile exec expo run:android --device {{.AVD}}
+      # No --device flag: it wants an AVD name, not an adb serial, and passing the
+      # serial makes it exit 0 without installing anything.
+      - pnpm --filter @photu/mobile exec expo run:android
+
+  mobile:menu:
+    desc: Open the React Native dev menu on the emulator (reload, inspector, perf)
+    cmds:
+      # KEYCODE_MENU. Metro fast-refreshes on save already, so this is only needed
+      # for a full reload or the inspector.
+      - "{{.ADB}} shell input keyevent 82"
+
+  mobile:launch:
+    desc: Launch the installed app without rebuilding
+    cmds:
+      # `am start` on the explicit activity. `monkey` is unreliable here — it can
+      # land on the launcher instead of the app.
+      - "{{.ADB}} shell am start -n app.photu.mobile/.MainActivity"
+
+  dev:
+    desc: Everything — infra, migrations, API, emulator, app
+    cmds:
+      - task: up:infra
+      - task: migrate
+      - task: emulator
+      - |
+        echo
+        echo "Infra and emulator are up. Now run these in separate terminals:"
+        echo "  task api        # the Go API on :8080"
+        echo "  task mobile     # Metro bundler"
+        echo "  task mobile:android   # build + install on the emulator"
+        echo
+        echo "See docs/running-locally.md"
 
   # -------------------------------------------------------------------- android
 
@@ -250,10 +282,15 @@ tasks:
 
   shot:
     desc: Screenshot the emulator (task shot -- name)
+    # Single-quoted YAML so the Go template can use its own double quotes; escaping
+    # them inside a double-quoted scalar reaches the template as backslashes and
+    # fails with 'unexpected "\\" in operand'.
+    vars:
+      NAME: '{{.CLI_ARGS | default "shot"}}'
     cmds:
       - mkdir -p tmp/shots
-      - "{{.ADB}} exec-out screencap -p > tmp/shots/{{.CLI_ARGS | default \"shot\"}}.png"
-      - echo "wrote tmp/shots/{{.CLI_ARGS | default \"shot\"}}.png"
+      - '{{.ADB}} exec-out screencap -p > tmp/shots/{{.NAME}}.png'
+      - 'echo "wrote tmp/shots/{{.NAME}}.png"'
 
   logcat:
     desc: Tail the app's logs from the emulator

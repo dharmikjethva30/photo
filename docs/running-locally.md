@@ -1,0 +1,136 @@
+# Running photu locally
+
+Every command below has been run on this machine. If one fails, `task doctor`
+first — it reports what's missing.
+
+## First time
+
+```bash
+task doctor          # what's missing
+task android:setup   # JDK 17 + Android SDK + the AVD (slow, ~5GB, idempotent)
+pnpm install
+```
+
+## Every session
+
+Three long-running processes, so three terminals. Or `task dev` to bring up the
+first two and be told what's left.
+
+```bash
+# Terminal 1 — Postgres + LocalStack, then migrations
+task up:infra
+task migrate
+
+# Terminal 2 — the Go API on :8080
+task api
+
+# Terminal 3 — Metro, then build/install onto the emulator
+task emulator          # boots the AVD (~35s); skips if already up
+task mobile:android    # Gradle build + install + launch
+```
+
+`task mobile:android` starts Metro itself. Once the app is installed, a JS change
+hot-reloads — you do **not** need to rebuild. Rebuild only when you change native
+config (`app.config.ts`), add a native dependency, or change an icon/font.
+
+```bash
+task mobile            # just Metro, if the app is already installed
+task mobile:launch     # relaunch the installed app
+```
+
+## Looking at it
+
+```bash
+task shot -- home           # screenshot to tmp/shots/home.png
+task logcat                 # the app's logs, filtered to its pid
+task mobile:menu            # React Native dev menu (reload, inspector, perf)
+```
+
+Right now the app opens on a **design-system verification screen** with two dev
+routes: a component gallery and a palette matrix. There is no library or album
+screen yet, deliberately — see "What you can and cannot test" below.
+
+The palette matrix is worth a look: tap any palette chip to switch the whole app,
+and note that `ash` and `porcelain` are flagged `accent = ink`, where the "Add"
+pill and the active-tab pill become indistinguishable. That is a real design
+constraint, not a rendering bug.
+
+## Checking the backend without the app
+
+```bash
+curl -s localhost:8080/healthz | jq        # liveness
+curl -s localhost:8080/readyz  | jq        # real Postgres + S3 probes
+```
+
+To prove readiness is genuine rather than hardcoded:
+
+```bash
+docker compose stop localstack
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/readyz   # 503
+docker compose start localstack
+curl -s -o /dev/null -w '%{http_code}\n' localhost:8080/readyz   # 200
+```
+
+Other useful checks:
+
+```bash
+task verify:infra     # pgvector, both buckets, CORS, lifecycle rules
+task db:invariants    # 23 assertions that the SCHEMA enforces the business rules
+task psql             # a shell on the dev database
+task test             # Go + Python + JS
+```
+
+## The networking bit that matters
+
+The emulator is a separate machine. `localhost` there means the emulator itself,
+not your Mac.
+
+| From | Reaches your Mac as |
+|---|---|
+| Android emulator | `10.0.2.2` |
+| iOS simulator | `localhost` (shares the host network) |
+| A physical device | your LAN IP — `task lan-ip` |
+
+The app defaults to `http://10.0.2.2:8080`, so the emulator talks to the API with
+no configuration. For a physical device:
+
+```bash
+task lan-ip                                             # e.g. 192.168.1.4
+EXPO_PUBLIC_API_BASE_URL=http://192.168.1.4:8080 task mobile
+```
+
+This is also why the API signs presigned S3 URLs for a *different* host than it
+uses itself: SigV4 covers the `Host` header, so a URL signed for `localstack:4566`
+cannot be re-pointed at the LAN address afterwards. See
+[`adr/0003`](adr/0003-upload-protocol.md).
+
+## What you can and cannot test yet
+
+**Can:**
+- The design system on a real device — type scale, all three fonts, icons, blur,
+  every palette
+- The Go API's health and readiness, including the failure path
+- The database schema and every business-rule constraint
+- The local S3 setup (buckets, CORS, lifecycle rules)
+
+**Cannot yet** — these land with the rest of M1:
+- Signing in, creating an album, uploading a photo, browsing a feed
+- Anything face-related
+
+There is deliberately **no** library or album screen showing sample albums. A
+screen full of invented data looks like progress while proving nothing, and the
+whole point of the walking skeleton is that the first product screen is wired to a
+real API. `scripts/no-mocks.sh` fails CI if prototype fixture data appears in app
+code.
+
+## When something is wrong
+
+| Symptom | Cause |
+|---|---|
+| Metro can't resolve `@photu/tokens` | `node-linker=hoisted` missing from `.npmrc`, or `metro.config.js` lost its `watchFolders` |
+| `Cannot find module './rolldown-binding...'` | Node below 22.12. `.npmrc` pins 22.23.1 via `use-node-version` |
+| Gradle version-assertion failure | A dependency drifted from the SDK's expected version. Run `pnpm exec expo install --check` — its answer beats npm's "latest" |
+| Blur renders flat on Android | The surface has no `blurTarget`. Android can only blur a `<BlurTargetView>` — see `packages/ui-native/src/useGlass.tsx` |
+| App looks inverted in a screenshot | You captured it before the JS bundle loaded. Wait ~10s after launch |
+| Presigned upload 403s from a device | The API signed for the wrong host. Check `S3_ENDPOINT_PUBLIC` and `task lan-ip` |
+| AVD creation says "system image paths are: null" | `cmd`-line tools resolve the SDK from their own location. `task android:setup` copies them into `$ANDROID_HOME` to fix it |

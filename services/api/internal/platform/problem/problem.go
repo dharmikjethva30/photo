@@ -41,6 +41,9 @@ const (
 	TypeMemberLimit     = "album_member_limit_reached"
 	TypeExtensionUsed   = "window_extension_already_used"
 	TypeConsentRequired = "face_consent_required"
+	// TypeInviteUnusable means the code is revoked, expired, or spent. The client
+	// tells these apart from "wrong code" (404) to show the right landing copy.
+	TypeInviteUnusable = "invite_unusable"
 )
 
 // Problem is the wire format. Field names are fixed by RFC 9457.

@@ -57,6 +57,12 @@ func NewRouter(d Deps) http.Handler {
 		r.Post("/auth/refresh", h.refresh)
 		r.Post("/auth/logout", h.logout)
 
+		// The invite LANDING is public: a not-yet-signed-in user follows a shared
+		// link and needs to see the album's name before deciding to join. Returns
+		// only a public preview and mutates nothing. Accepting requires a session
+		// (below), because that is where authority actually comes from — ADR 0004.
+		r.Get("/invites/{code}", h.getInvite)
+
 		// --- authenticated --------------------------------------------------
 		r.Group(func(r chi.Router) {
 			r.Use(h.RequireAuth)
@@ -73,8 +79,15 @@ func NewRouter(d Deps) http.Handler {
 					r.Get("/members", h.listAlbumMembers)
 					r.Get("/media", h.albumFeed)
 					r.Post("/uploads", h.declareUpload)
+					r.Post("/invites", h.createInvite)
+					r.Get("/invites", h.listInvites)
+					r.Delete("/invites/{inviteID}", h.revokeInvite)
 				})
 			})
+
+			// Accepting an invite requires a session — this is the step that grants
+			// access, so it must be authenticated even though the landing above is not.
+			r.Post("/invites/{code}/accept", h.acceptInvite)
 
 			r.Route("/uploads/{mediaID}", func(r chi.Router) {
 				// Resume state and part URLs, for the resumable multipart path.

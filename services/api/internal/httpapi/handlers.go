@@ -9,6 +9,7 @@ import (
 
 	"github.com/dharmikjethva30/photo/services/api/internal/adapter/postgres/sqlcgen"
 	"github.com/dharmikjethva30/photo/services/api/internal/app/albumsvc"
+	"github.com/dharmikjethva30/photo/services/api/internal/app/invitesvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/app/mediasvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/auth"
 	"github.com/dharmikjethva30/photo/services/api/internal/platform/config"
@@ -19,10 +20,11 @@ import (
 // Handlers holds the services the HTTP layer delegates to. Explicit dependencies
 // rather than a locator, so the compiler says what a new route needs.
 type Handlers struct {
-	Config config.Config
-	Auth   *auth.Service
-	Albums *albumsvc.Service
-	Media  *mediasvc.Service
+	Config  config.Config
+	Auth    *auth.Service
+	Albums  *albumsvc.Service
+	Media   *mediasvc.Service
+	Invites *invitesvc.Service
 	// Queries backs the few endpoints that are genuinely a single read with no
 	// business rule attached (the profile). Anything with a rule belongs in a
 	// service — see the depguard rule keeping pgxpool out of this package.

@@ -38,6 +38,12 @@ type Config struct {
 	// device cannot resolve localhost and invite links embed this.
 	PublicBaseURL string `env:"PUBLIC_BASE_URL" envDefault:"http://localhost:8080"`
 
+	// WebBaseURL is where the Next.js web app lives — the host of shareable invite
+	// links (WebBaseURL/a/<code>), which unfurl and open the join landing. Defaults to
+	// PublicBaseURL for local dev where the web app is not yet running; production
+	// points it at https://photu.app.
+	WebBaseURL string `env:"WEB_BASE_URL" envDefault:"http://localhost:8080"`
+
 	DatabaseURL     string        `env:"DATABASE_URL,required"`
 	DBMaxConns      int32         `env:"DB_MAX_CONNS" envDefault:"10"`
 	DBMaxConnLife   time.Duration `env:"DB_MAX_CONN_LIFETIME" envDefault:"30m"`

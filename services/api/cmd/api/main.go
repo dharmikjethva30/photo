@@ -15,6 +15,7 @@ import (
 	"github.com/dharmikjethva30/photo/services/api/internal/adapter/postgres/sqlcgen"
 	"github.com/dharmikjethva30/photo/services/api/internal/adapter/s3store"
 	"github.com/dharmikjethva30/photo/services/api/internal/app/albumsvc"
+	"github.com/dharmikjethva30/photo/services/api/internal/app/invitesvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/app/mediasvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/auth"
 	"github.com/dharmikjethva30/photo/services/api/internal/httpapi"
@@ -112,6 +113,7 @@ func run() error {
 	visibility := postgres.NewVisibilityRepo(pool)
 	albums := albumsvc.New(pool, visibility, cfg.Limit)
 	media := mediasvc.New(pool, albums, storage, visibility, cfg.Limit)
+	invites := invitesvc.New(pool, albums, cfg.Limit)
 
 	handler := httpapi.NewRouter(httpapi.Deps{
 		Config: cfg,
@@ -122,6 +124,7 @@ func run() error {
 			Auth:    authSvc,
 			Albums:  albums,
 			Media:   media,
+			Invites: invites,
 			Queries: sqlcgen.New(pool),
 		},
 	})

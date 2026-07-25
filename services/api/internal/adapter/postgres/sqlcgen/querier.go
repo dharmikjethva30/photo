@@ -29,6 +29,12 @@ type Querier interface {
 	ClaimFreeAlbumSlot(ctx context.Context, userID uuid.UUID) (AlbumEntitlement, error)
 	ClaimPurchasedEntitlement(ctx context.Context, arg ClaimPurchasedEntitlementParams) (AlbumEntitlement, error)
 	CompleteUploadSession(ctx context.Context, mediaItemID uuid.UUID) error
+	// Atomically records one use, but ONLY while the invite is still valid. The WHERE
+	// clause is the enforcement: not revoked, not expired, and under max_uses if one is
+	// set. A concurrent burst of accepts cannot exceed max_uses because each UPDATE
+	// re-checks use_count against the row it locks. Returns no row when the invite is
+	// spent or dead, which the caller maps to a 409/410.
+	ConsumeInvite(ctx context.Context, id uuid.UUID) (Invite, error)
 	CountAlbumMembers(ctx context.Context, albumID uuid.UUID) (int64, error)
 	CountFreeSlotsUsed(ctx context.Context, userID uuid.UUID) (int64, error)
 	// Media that has been uploaded but is not yet viewable.
@@ -39,6 +45,13 @@ type Querier interface {
 	// looks lost when it is merely still being processed.
 	CountProcessingMedia(ctx context.Context, albumID uuid.UUID) (int64, error)
 	CreateAlbum(ctx context.Context, arg CreateAlbumParams) (Album, error)
+	// Invite queries.
+	//
+	// An invite CODE is a public, shareable identifier with no authority of its own:
+	// holding it lets you *view* the invite and, once signed in, join. It never grants
+	// access by itself (docs/adr/0004's principle that authority comes from a session,
+	// not from a URL). So the code is stored in clear and looked up directly.
+	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
 	// A re-declare (same client_media_id after a dropped response) starts a NEW S3
 	// multipart upload, so s3_upload_id and part_size must move together. Updating only
@@ -65,6 +78,9 @@ type Querier interface {
 	EnsureNotificationPrefs(ctx context.Context, userID uuid.UUID) error
 	GetAlbum(ctx context.Context, id uuid.UUID) (Album, error)
 	GetAlbumMember(ctx context.Context, arg GetAlbumMemberParams) (AlbumMember, error)
+	// The row plus the album title and cover, which the join/landing screen shows before
+	// the user commits. Only non-deleted albums: an invite to a deleted album is dead.
+	GetInviteByCode(ctx context.Context, code string) (GetInviteByCodeRow, error)
 	GetMediaItem(ctx context.Context, id uuid.UUID) (MediaItem, error)
 	GetRefreshTokenByHash(ctx context.Context, tokenSha256 []byte) (RefreshToken, error)
 	GetRendition(ctx context.Context, arg GetRenditionParams) (MediaRendition, error)
@@ -75,6 +91,7 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	// The sign-in lookup: resolve a provider's subject claim to our user.
 	GetUserByProviderIdentity(ctx context.Context, arg GetUserByProviderIdentityParams) (User, error)
+	ListAlbumInvites(ctx context.Context, albumID uuid.UUID) ([]Invite, error)
 	ListAlbumMembers(ctx context.Context, albumID uuid.UUID) ([]ListAlbumMembersRow, error)
 	// The library screen. Ordered newest-active-first, which is how the design shows
 	// it: live albums on top, keepsakes below.
@@ -90,6 +107,10 @@ type Querier interface {
 	// Called only after HeadObject has verified the bytes against the declared size
 	// and checksum. That verification is the trust boundary of the whole protocol.
 	MarkMediaUploaded(ctx context.Context, arg MarkMediaUploadedParams) (MediaItem, error)
+	// Idempotent and ownership-scoped in one statement: the album_id predicate means a
+	// caller can only revoke an invite belonging to an album they passed authorization
+	// for, and re-revoking is a no-op that still returns the row.
+	RevokeInvite(ctx context.Context, arg RevokeInviteParams) (Invite, error)
 	// The response to a replayed token: revoke every descendant of that sign-in, not
 	// just the one presented.
 	RevokeRefreshTokenFamily(ctx context.Context, familyID uuid.UUID) error

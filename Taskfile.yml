@@ -189,8 +189,32 @@ tasks:
   # ---------------------------------------------------------------- run: local
 
   api:
-    desc: Run the Go API on the host
+    desc: Run the Go API for use from the HOST (curl, task smoke)
     cmds:
+      - cd {{.API_DIR}} && go run ./cmd/api
+
+  api:emulator:
+    desc: Run the Go API for use from the ANDROID EMULATOR
+    env:
+      # The API listens on all interfaces either way — what changes is the URLs it
+      # EMITS. Image URLs in the feed and presigned S3 URLs must name a host the
+      # CLIENT can reach, and inside the emulator `localhost` is the emulator
+      # itself. 10.0.2.2 is its alias for this machine.
+      #
+      # Presigned URLs in particular cannot be rewritten after the fact: SigV4
+      # covers the Host header. See docs/adr/0003.
+      PUBLIC_BASE_URL: http://10.0.2.2:8080
+      S3_ENDPOINT_PUBLIC: http://10.0.2.2:4566
+    cmds:
+      - cd {{.API_DIR}} && go run ./cmd/api
+
+  api:device:
+    desc: Run the Go API for use from a PHYSICAL DEVICE on this LAN
+    env:
+      PUBLIC_BASE_URL: http://{{.LAN_IP}}:8080
+      S3_ENDPOINT_PUBLIC: http://{{.LAN_IP}}:4566
+    cmds:
+      - task: lan-ip
       - cd {{.API_DIR}} && go run ./cmd/api
 
   worker:

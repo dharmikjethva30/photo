@@ -1,0 +1,275 @@
+# photu — cross-language task runner.
+#
+# Task owns anything that spans languages or containers. Turborepo owns the JS
+# task graph and is invoked *by* Task, so Go and Python development never depend
+# on a Node install. See docs/adr/0001-monorepo-tooling.md.
+#
+#   task            # list everything
+#   task doctor     # what's missing on this machine
+#   task up         # postgres + localstack + api + workers
+#   task smoke      # the end-to-end gate
+version: "3"
+
+dotenv: [".env"]
+
+vars:
+  # A physical device cannot resolve `localhost` or the compose service name
+  # `localstack`. Presigned URLs must be SIGNED for the address the phone will
+  # actually use, because SigV4 covers the Host header and the URL cannot be
+  # rewritten afterwards. Every target that touches compose exports this.
+  LAN_IP:
+    sh: ipconfig getifaddr en0 2>/dev/null || ipconfig getifaddr en1 2>/dev/null || echo 127.0.0.1
+  COMPOSE: docker compose
+  API_DIR: services/api
+  WORKER_DIR: services/mediaworker
+
+env:
+  LAN_IP: "{{.LAN_IP}}"
+
+tasks:
+  default:
+    desc: List available tasks
+    silent: true
+    cmds:
+      - task --list
+
+  # ---------------------------------------------------------------- environment
+
+  doctor:
+    desc: Report what this machine is missing
+    silent: true
+    cmds:
+      - bash scripts/doctor.sh
+
+  lan-ip:
+    desc: Print the LAN IP used for presigned URLs and PUBLIC_BASE_URL
+    silent: true
+    cmds:
+      - |
+        echo "LAN_IP={{.LAN_IP}}"
+        if [ "{{.LAN_IP}}" = "127.0.0.1" ]; then
+          echo "  WARNING: no LAN address found. A physical device will not be able to"
+          echo "  reach the API or LocalStack. Connect to Wi-Fi and re-run."
+        fi
+
+  env:init:
+    desc: Create .env from .env.example if absent
+    status:
+      - test -f .env
+    cmds:
+      - cp .env.example .env
+      - echo "Created .env from .env.example — review it before running task up."
+
+  # ------------------------------------------------------------------- compose
+
+  up:
+    desc: Start postgres, localstack, api and workers
+    deps: [env:init]
+    cmds:
+      - "{{.COMPOSE}} up -d --build --wait"
+      - task: lan-ip
+
+  up:infra:
+    desc: Start only postgres + localstack (no app code — proves the infra alone)
+    deps: [env:init]
+    cmds:
+      - "{{.COMPOSE}} up -d --wait postgres localstack"
+      - task: verify:infra
+
+  down:
+    desc: Stop everything (keeps volumes)
+    cmds:
+      - "{{.COMPOSE}} down"
+
+  nuke:
+    desc: Stop everything and delete volumes (full reset)
+    prompt: This deletes the local database and all LocalStack objects. Continue?
+    cmds:
+      - "{{.COMPOSE}} down -v"
+
+  logs:
+    desc: Tail logs (task logs -- api)
+    cmds:
+      - "{{.COMPOSE}} logs -f --tail=100 {{.CLI_ARGS}}"
+
+  ps:
+    desc: Show compose service status
+    cmds:
+      - "{{.COMPOSE}} ps"
+
+  verify:infra:
+    desc: Assert postgres has pgvector and both S3 buckets exist
+    silent: true
+    cmds:
+      - bash scripts/verify-infra.sh
+
+  # ------------------------------------------------------------------ database
+
+  migrate:
+    desc: Apply all migrations
+    cmds:
+      - goose -dir {{.API_DIR}}/db/migrations postgres "$DATABASE_URL" up
+
+  migrate:down:
+    desc: Roll back one migration
+    cmds:
+      - goose -dir {{.API_DIR}}/db/migrations postgres "$DATABASE_URL" down
+
+  migrate:reset:
+    desc: Roll every migration back to zero, then re-apply (proves down-migrations work)
+    cmds:
+      - goose -dir {{.API_DIR}}/db/migrations postgres "$DATABASE_URL" down-to 0
+      - goose -dir {{.API_DIR}}/db/migrations postgres "$DATABASE_URL" up
+
+  migrate:status:
+    cmds:
+      - goose -dir {{.API_DIR}}/db/migrations postgres "$DATABASE_URL" status
+
+  migrate:new:
+    desc: Create a migration (task migrate:new -- add_reports_table)
+    cmds:
+      - goose -dir {{.API_DIR}}/db/migrations create {{.CLI_ARGS}} sql
+
+  psql:
+    desc: Open a psql shell on the dev database
+    interactive: true
+    cmds:
+      - "{{.COMPOSE}} exec postgres psql -U $POSTGRES_USER -d $POSTGRES_DB"
+
+  seed:
+    desc: Seed real users and a real album through the service layer
+    cmds:
+      - cd {{.API_DIR}} && go run ./cmd/seed
+
+  # ------------------------------------------------------------------ codegen
+
+  gen:
+    desc: Regenerate everything derived (OpenAPI, sqlc, tokens CSS)
+    cmds:
+      - task: gen:sqlc
+      - task: gen:openapi
+      - task: gen:tokens
+
+  gen:sqlc:
+    cmds:
+      - cd {{.API_DIR}} && sqlc generate -f db/sqlc.yaml
+
+  gen:openapi:
+    cmds:
+      - cd {{.API_DIR}} && go generate ./internal/httpapi/...
+      - pnpm --filter @photu/api-contract run generate
+
+  gen:tokens:
+    cmds:
+      - pnpm --filter @photu/tokens run build
+
+  gen:verify:
+    desc: Fail if generated output is stale (used by CI)
+    cmds:
+      - task: gen
+      - git diff --exit-code -- '*.gen.go' 'packages/api-contract/src/generated' 'packages/tokens/dist'
+
+  # ---------------------------------------------------------------- run: local
+
+  api:
+    desc: Run the Go API on the host
+    cmds:
+      - cd {{.API_DIR}} && go run ./cmd/api
+
+  worker:
+    desc: Run the Go (river) worker on the host
+    cmds:
+      - cd {{.API_DIR}} && go run ./cmd/worker
+
+  mediaworker:
+    desc: Run the Python media worker on the host
+    cmds:
+      - cd {{.WORKER_DIR}} && uv run mediaworker --kinds=thumbnail,face
+
+  mobile:
+    desc: Start Metro for the mobile app (dev client)
+    cmds:
+      - pnpm --filter @photu/mobile exec expo start --dev-client
+
+  mobile:prebuild:
+    desc: Regenerate ios/ and android/ from app.config.ts
+    cmds:
+      - pnpm --filter @photu/mobile exec expo prebuild --clean
+
+  web:
+    desc: Start the Next.js web app
+    cmds:
+      - pnpm --filter @photu/web run dev
+
+  models:fetch:
+    desc: Download the InsightFace ONNX weights into the worker model cache
+    cmds:
+      - cd {{.WORKER_DIR}} && uv run python -m mediaworker.models fetch
+
+  # -------------------------------------------------------------------- checks
+
+  test:
+    desc: Run every test suite
+    cmds:
+      - task: test:go
+      - task: test:py
+      - task: test:js
+
+  test:go:
+    cmds:
+      - cd {{.API_DIR}} && go test ./... -race -count=1
+
+  test:py:
+    cmds:
+      - cd {{.WORKER_DIR}} && uv run pytest -q
+
+  test:js:
+    cmds:
+      - pnpm turbo run test
+
+  lint:
+    desc: Lint every language
+    cmds:
+      - task: lint:go
+      - task: lint:py
+      - task: lint:js
+
+  lint:go:
+    cmds:
+      - cd {{.API_DIR}} && go vet ./...
+      - cd {{.API_DIR}} && golangci-lint run
+
+  lint:py:
+    cmds:
+      - cd {{.WORKER_DIR}} && uv run ruff check .
+      - cd {{.WORKER_DIR}} && uv run ruff format --check .
+
+  lint:js:
+    cmds:
+      - pnpm biome check .
+      - pnpm turbo run typecheck
+
+  lint:no-mocks:
+    desc: Fail if prototype fixture data leaked into app code
+    silent: true
+    cmds:
+      - bash scripts/no-mocks.sh
+
+  smoke:
+    desc: End-to-end gate — signin, create album, upload a real photo, read it back
+    cmds:
+      - bash scripts/smoke.sh
+
+  # --------------------------------------------------------------------- misc
+
+  keys:dev:
+    desc: Generate a dev Ed25519 signing keypair into .env
+    cmds:
+      - bash scripts/gen-dev-keys.sh
+
+  fmt:
+    desc: Format everything
+    cmds:
+      - pnpm biome check --write .
+      - cd {{.API_DIR}} && go fmt ./...
+      - cd {{.WORKER_DIR}} && uv run ruff format .

@@ -1,0 +1,7 @@
+# services/* is deliberately NOT a workspace member: services/api is a Go module
+# and services/mediaworker is a uv-managed Python package. Neither has a
+# package.json, and adding them here would make Go and Python development depend
+# on a Node install. See docs/adr/0001-monorepo-tooling.md.
+packages:
+  - "apps/*"
+  - "packages/*"

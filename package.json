@@ -1,0 +1,32 @@
+{
+  "name": "photu",
+  "version": "0.0.0",
+  "private": true,
+  "packageManager": "pnpm@10.12.4",
+  "//engines": "Floor is 22.12, not 22: rolldown's native bindings (via vitest) declare `^20.19.0 || >=22.12.0`, and below that pnpm silently skips them as unsatisfiable optional deps. See .npmrc.",
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "scripts": {
+    "build": "turbo run build",
+    "typecheck": "turbo run typecheck",
+    "test": "turbo run test",
+    "lint": "biome check .",
+    "format": "biome check --write ."
+  },
+  "//pnpm": "pnpm 10 blocks postinstall scripts unless listed here. These packages ship native binaries or need a postinstall to be usable at all; anything added must be a deliberate decision, which is the point of the allowlist.",
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "esbuild"
+    ]
+  },
+  "//devDependencies": "Shared toolchain lives at the root only, so workspace packages cannot drift onto different compiler or test-runner versions. TypeScript is pinned to the 5.9 line deliberately: 7.x is the native Go rewrite and 6.x is a transition release, neither of which the Expo 57 / RN 0.86 type surface targets yet.",
+  "devDependencies": {
+    "@biomejs/biome": "^2.5.5",
+    "@types/node": "^26.1.1",
+    "tsx": "^4.23.1",
+    "turbo": "^2.10.6",
+    "typescript": "~5.9.3",
+    "vitest": "^4.1.10"
+  }
+}

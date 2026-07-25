@@ -1,0 +1,366 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Photu — Phase 1 Design</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=EB+Garamond:ital,wght@0,400;0,500;0,600;1,400;1,500&family=Fraunces:ital,opsz,wght@0,9..144,400;0,9..144,500;0,9..144,600;1,9..144,400;1,9..144,500&family=Inter+Tight:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <style>
+    html, body { margin: 0; padding: 0; }
+    body { background: #f0eee9; -webkit-font-smoothing: antialiased; }
+    @keyframes caret { 50% { opacity: 0; } }
+  </style>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel" src="theme.jsx"></script>
+  <script type="text/babel" src="palettes.jsx"></script>
+  <script type="text/babel" src="primitives.jsx"></script>
+  <script type="text/babel" src="android-frame.jsx"></script>
+  <script type="text/babel" src="browser-window.jsx"></script>
+  <script type="text/babel" src="screens-core.jsx"></script>
+  <script type="text/babel" src="screens-album.jsx"></script>
+  <script type="text/babel" src="screens-misc.jsx"></script>
+  <script type="text/babel" src="screens-new.jsx"></script>
+  <script type="text/babel" src="screens-web.jsx"></script>
+  <script type="text/babel" src="brand.jsx"></script>
+  <script type="text/babel" src="ui-language.jsx"></script>
+  <script type="text/babel" src="prototype.jsx"></script>
+  <script type="text/babel" src="app.jsx"></script>
+  <script type="text/babel" src="design-canvas.jsx"></script>
+  <script type="text/babel" src="tweaks-panel.jsx"></script>
+
+  <script type="text/babel">
+    const TWEAK_DEFAULTS = /*EDITMODE-BEGIN*/{
+      "aesthetic": "quiet",
+      "viewer": "maya",
+      "privacyMode": "open",
+      "albumState": "active",
+      "showFaceMarkers": true
+    }/*EDITMODE-END*/;
+
+    function App() {
+      const [tweaks, setTweak] = window.useTweaks(TWEAK_DEFAULTS);
+      const theme = window.THEMES[tweaks.aesthetic] || window.THEMES.keepsake;
+
+      // pass tweaks via context-y prop drilling — only screens that read them care
+      return (
+        <>
+          <window.DesignCanvas>
+            <window.DCSection id="wired" title="Wired prototype — every flow, tap-through" subtitle="All 12 Phase-1 flows connected with real state: hiding a photo removes it, allowlist toggles persist, the 4th album hits the paywall, uploads progress live. Pick an entry point on the right.">
+              <window.DCArtboard id="wired-app" label="Photu · full app" width={740} height={940}>
+                <div style={{ background: '#f0eee9', padding: '32px 24px' }}>
+                  <window.WiredApp theme={theme}/>
+                </div>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            <window.DCSection id="finalists" title="Brand — pick the name" subtitle="The three candidates with an honest for/against. Cards render in the active palette — switch it in Tweaks to audition pairings. Tell me the winner and I'll retire the rest.">
+              <window.DCArtboard id="fin-photu" label="Finalist · Photu" width={460} height={410}>
+                <window.FinalistCard theme={theme} name="photu" tagline="One album. Everyone's photos. Original quality."
+                  pros={[ 'Ownable, brandable, short', 'Warm South-Asian echo of “photo” — personal, not corporate', 'Verb potential: “photu it”' ]}
+                  cons={[ 'Needs pronunciation learning outside some communities', 'Reads as a typo to a few people' ]}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="fin-together" label="Finalist · Together" width={460} height={410}>
+                <window.FinalistCard theme={theme} name="Together" dot={false} tagline="A shared album for the moments worth keeping."
+                  pros={[ 'Says the value in one word', 'Zero explanation needed', 'Warm, family-safe' ]}
+                  cons={[ 'Generic — hard to trademark or search', 'Domain and App Store collisions everywhere', 'No verb form' ]}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="fin-roll" label="Finalist · Roll" width={460} height={410}>
+                <window.FinalistCard theme={theme} name="Roll" dot={false} tagline="A film roll for every trip."
+                  pros={[ 'Film-roll metaphor matches the time-bounded window', 'Short, punchy, verb-able: “start a roll”', 'Camera-roll familiarity' ]}
+                  cons={[ 'Crowded namespace (Rolls, RollCall…)', 'Metaphor may read as retro-only' ]}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            <window.DCSection id="missing" title="New — settings, notifications, edge states" subtitle="The screens the spec implies but the canvas was missing. Settings carries the free-album meter and face-data controls; the lock screen shows copy for all six push types.">
+              <window.DCArtboard id="ms-settings" label="Settings" width={390} height={844}>
+                <window.ScreenSettings theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="ms-push" label="Push notifications · all 6 types" width={390} height={844}>
+                <window.ScreenLockNotifs theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="ms-empty" label="Library · first run" width={390} height={844}>
+                <window.ScreenLibraryEmpty theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="ms-uperr" label="Upload · connection lost" width={390} height={844}>
+                <window.ScreenUploadError theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            <window.DCSection id="platforms" title="Android — React Native parity" subtitle="One codebase, one design. Identical screens on Android; only the system chrome changes (status bar, punch-hole, gesture pill). No Material nav bar or FAB.">
+              <window.DCArtboard id="pf-android-lib" label="Android · Library" width={412} height={892}>
+                <window.AndroidPhone theme={theme}><window.ScreenLibrary theme={theme}/></window.AndroidPhone>
+              </window.DCArtboard>
+              <window.DCArtboard id="pf-android-feed" label="Android · Album feed" width={412} height={892}>
+                <window.AndroidPhone theme={theme}><window.ScreenAlbumFeed theme={theme} viewer={tweaks.viewer} privacyMode={tweaks.privacyMode} state={tweaks.albumState}/></window.AndroidPhone>
+              </window.DCArtboard>
+              <window.DCArtboard id="pf-android-viewer" label="Android · Photo viewer" width={412} height={892}>
+                <window.AndroidPhone theme={theme}><window.ScreenViewer theme={theme}/></window.AndroidPhone>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            <window.DCSection id="web" title="Web — the no-install surface" subtitle="Everything a non-user needs from a magic link: invite landing, browse-only gallery with sign-in nudges, lightbox viewer, and full-quality upload.">
+              <window.DCArtboard id="web-join" label="Web · invite landing" width={1200} height={804}>
+                <window.ChromeWindow tabs={[{ title: 'You\u2019re invited — photu' }]} url="photu.app/a/lisbon-93jx" width={1200} height={804}>
+                  <window.WebJoinPage theme={theme} w={1200}/>
+                </window.ChromeWindow>
+              </window.DCArtboard>
+              <window.DCArtboard id="web-album" label="Web · album (browse-only)" width={1200} height={804}>
+                <window.ChromeWindow tabs={[{ title: 'Lisbon, March — photu' }]} url="photu.app/a/lisbon-93jx" width={1200} height={804}>
+                  <window.WebAlbumPage theme={theme} w={1200}/>
+                </window.ChromeWindow>
+              </window.DCArtboard>
+              <window.DCArtboard id="web-lightbox" label="Web · lightbox viewer" width={1200} height={804}>
+                <window.ChromeWindow tabs={[{ title: 'Lisbon, March — photu' }]} url="photu.app/a/lisbon-93jx" width={1200} height={804}>
+                  <window.WebLightbox theme={theme} w={1200}/>
+                </window.ChromeWindow>
+              </window.DCArtboard>
+              <window.DCArtboard id="pf-web" label="Web · magic-link upload" width={1200} height={804}>
+                <window.ChromeWindow tabs={[{ title: 'Lisbon, March — photu' }]} url="photu.app/a/lisbon-93jx" width={1200} height={804}>
+                  <window.WebUploadPage theme={theme} w={1200}/>
+                </window.ChromeWindow>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Brand Exploration ───────────────────────────────────── */}
+            <window.DCSection id="brand" title="Brand exploration" subtitle="Three name candidates × two aesthetic directions. Pick a pair, push it further.">
+              <window.DCArtboard id="brand-photu-A" label="Photu · Keepsake · A" width={360} height={280}>
+                <window.BrandCard name="photu" tagline="One album. Everyone's photos. Original quality." theme={window.THEMES.keepsake} variant="A"/>
+              </window.DCArtboard>
+              <window.DCArtboard id="brand-photu-B" label="Photu · Quiet · B" width={360} height={280}>
+                <window.BrandCard name="photu" tagline="The group's photos, in one place." theme={window.THEMES.quiet} variant="B"/>
+              </window.DCArtboard>
+              <window.DCArtboard id="brand-together-A" label="Together · Keepsake · C" width={360} height={280}>
+                <window.BrandCard name="Together" tagline="A shared album for the moments worth keeping." theme={window.THEMES.keepsake} variant="C"/>
+              </window.DCArtboard>
+              <window.DCArtboard id="brand-together-B" label="Together · Quiet · A" width={360} height={280}>
+                <window.BrandCard name="Together" tagline="Original-quality photos, just for the group." theme={window.THEMES.quiet} variant="A"/>
+              </window.DCArtboard>
+              <window.DCArtboard id="brand-roll-A" label="Roll · Keepsake · B" width={360} height={280}>
+                <window.BrandCard name="Roll" tagline="A film roll for every trip." theme={window.THEMES.keepsake} variant="B"/>
+              </window.DCArtboard>
+              <window.DCArtboard id="brand-roll-B" label="Roll · Quiet · C" width={360} height={280}>
+                <window.BrandCard name="Roll" tagline="Develop the trip together." theme={window.THEMES.quiet} variant="C"/>
+              </window.DCArtboard>
+              <window.DCArtboard id="system-A" label="System — Keepsake" width={360} height={280}>
+                <window.SystemCard theme={window.THEMES.keepsake}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="system-B" label="System — Quiet" width={360} height={280}>
+                <window.SystemCard theme={window.THEMES.quiet}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="tone" label="Voice samples" width={360} height={280}>
+                <window.ToneCard theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Palette Library ─────────────────────────────────────── */}
+            <window.DCSection id="palettes" title="Color language — eleven minimal palettes" subtitle="All low-key. One restrained accent each. Switch the active palette in the Tweaks panel and every flow below re-skins.">
+              {window.PALETTE_ORDER.map(k => (
+                <window.DCArtboard key={`pal-${k}`} id={`pal-${k}`} label={window.PALETTES[k].name} width={360} height={300}>
+                  <window.PaletteCard t={window.PALETTES[k]}/>
+                </window.DCArtboard>
+              ))}
+            </window.DCSection>
+
+            {/* ── Same screen, every palette ──────────────────────────── */}
+            <window.DCSection id="palette-sampler" title="Same screen, every palette" subtitle="The album feed rendered in all eleven palettes. The fastest way to feel which one is right.">
+              {window.PALETTE_ORDER.map(k => (
+                <window.DCArtboard key={`samp-${k}`} id={`samp-${k}`} label={window.PALETTES[k].name} width={390} height={844}>
+                  <window.ScreenAlbumFeed theme={window.PALETTES[k]} viewer="me" privacyMode="face" state="active"/>
+                </window.DCArtboard>
+              ))}
+            </window.DCSection>
+
+            {/* ── UI Language Variants ────────────────────────────────── */}
+            <window.DCSection id="ui-language" title="UI language — feed metaphors" subtitle="Different ways to organise the same photos. Picks the album's reading rhythm: grid, timeline, magazine, or photographer's contact sheet.">
+              <window.DCArtboard id="ui-grid" label="Grid (current default)" width={390} height={700}>
+                <window.ScreenAlbumFeed theme={theme} viewer="me" privacyMode="face" state="active"/>
+              </window.DCArtboard>
+              <window.DCArtboard id="ui-strip" label="Strip · timeline rail" width={390} height={700}>
+                <window.UILangStrip theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="ui-mosaic" label="Mosaic · editorial" width={390} height={700}>
+                <window.UILangMosaic theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="ui-stream" label="Stream · social feed" width={390} height={700}>
+                <window.UILangStream theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="ui-contact" label="Contact sheet · pro" width={390} height={700}>
+                <window.UILangContact theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Hero Prototype ──────────────────────────────────────── */}
+            <window.DCSection id="hero" title="Hero flow — legacy step-through" subtitle="Superseded by the wired prototype at the top; kept for side-by-side screen review.">
+              <window.DCArtboard id="hero-proto" label="Hero prototype · Library → Paywall" width={720} height={920}>
+                <div style={{ background: '#f0eee9', padding: 32 }}>
+                  <window.Prototype theme={theme}/>
+                </div>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Onboarding ──────────────────────────────────────────── */}
+            <window.DCSection id="onboarding" title="Flow 1 — Onboarding" subtitle="Sign in → name → optional face reference. Permissions are deferred until benefit is obvious.">
+              <window.DCArtboard id="ob-1" label="Sign in" width={390} height={844}>
+                <window.ScreenSignIn theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="ob-2" label="Profile name" width={390} height={844}>
+                <window.ScreenName theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="ob-3" label="Face reference (empty)" width={390} height={844}>
+                <window.ScreenFaceRef theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="ob-4" label="Face reference (captured)" width={390} height={844}>
+                <window.ScreenFaceRef theme={theme} captured/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Library + Create + Invite ───────────────────────────── */}
+            <window.DCSection id="create" title="Flow 2 — Create & invite" subtitle="From your library, pick an occasion, set the window, share the link.">
+              <window.DCArtboard id="cr-1" label="Library" width={390} height={844}>
+                <window.ScreenLibrary theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="cr-2" label="Create — template + form" width={390} height={844}>
+                <window.ScreenCreateAlbum theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="cr-3" label="Invite sheet" width={390} height={844}>
+                <window.ScreenInvite theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Join via link ───────────────────────────────────────── */}
+            <window.DCSection id="join" title="Flow 3 — Join via link" subtitle="Browse-first teaser before forced sign-in. Web upload variant on the right.">
+              <window.DCArtboard id="join-1" label="Join · iOS" width={390} height={844}>
+                <window.ScreenJoin theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="join-2" label="Web upload page" width={900} height={620}>
+                <window.WebUploadPage theme={theme} w={900}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Upload + tag ────────────────────────────────────────── */}
+            <window.DCSection id="upload" title="Flows 4 & 5 — Upload & confirm tags" subtitle="Original-quality progress, then the bulk-confirm prompt.">
+              <window.DCArtboard id="up-1" label="Upload progress" width={390} height={844}>
+                <window.ScreenUpload theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="up-2" label="Confirm face tag" width={390} height={844}>
+                <window.ScreenFaceTag theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Browsing + face privacy ─────────────────────────────── */}
+            <window.DCSection id="browse" title="Flow 6 — Browsing with face-privacy" subtitle={`Switch viewer in Tweaks to see the same album from another member's perspective. Currently: ${window.PEOPLE.find(p => p.id === tweaks.viewer)?.name}, mode: ${tweaks.privacyMode}.`}>
+              <window.DCArtboard id="br-1" label="Album feed · default" width={390} height={844}>
+                <window.ScreenAlbumFeed theme={theme} viewer={tweaks.viewer} privacyMode={tweaks.privacyMode} state={tweaks.albumState}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="br-2" label="Just-me filter" width={390} height={844}>
+                <window.ScreenAlbumFeed theme={theme} viewer={tweaks.viewer} privacyMode={tweaks.privacyMode} state={tweaks.albumState} justMe/>
+              </window.DCArtboard>
+              <window.DCArtboard id="br-3" label="Photo viewer" width={390} height={844}>
+                <window.ScreenViewer theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Subject veto ────────────────────────────────────────── */}
+            <window.DCSection id="veto" title="Flow 7 — Hide me from a photo" subtitle="Long-press → Hide me sheet. Photographer gets a polite, non-accusing notification.">
+              <window.DCArtboard id="vt-1" label="Hide-me sheet" width={390} height={844}>
+                <window.ScreenViewer theme={theme} showHideSheet/>
+              </window.DCArtboard>
+              <window.DCArtboard id="vt-2" label="Privacy explainer" width={390} height={844}>
+                <window.ScreenPrivacyExplainer theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Allowlist ───────────────────────────────────────────── */}
+            <window.DCSection id="allow" title="Flow 8 — Grant access to my partner" subtitle="Per-member opt-in to override face-privacy for photos of you.">
+              <window.DCArtboard id="al-1" label="Allowlist (settings)" width={390} height={844}>
+                <window.ScreenAllowlist theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Lifecycle ───────────────────────────────────────────── */}
+            <window.DCSection id="lifecycle" title="Flows 9 & 10 — Window closing & locked" subtitle="Countdown banner, owner extend, then the keepsake state.">
+              <window.DCArtboard id="lc-1" label="Album · closing soon" width={390} height={844}>
+                <window.ScreenAlbumFeed theme={theme} viewer={tweaks.viewer} privacyMode={tweaks.privacyMode} state="closing" daysLeft={1}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="lc-2" label="Extend window" width={390} height={844}>
+                <window.ScreenExtendWindow theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="lc-3" label="Locked · keepsake" width={390} height={844}>
+                <window.ScreenLocked theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── Payment ─────────────────────────────────────────────── */}
+            <window.DCSection id="pay" title="Flows 11 & 12 — Pay & split" subtitle="Album 4 paywall is positioned as a £1.49 line item that drops into Splitwise.">
+              <window.DCArtboard id="py-1" label="Paywall" width={390} height={844}>
+                <window.ScreenPaywall theme={theme}/>
+              </window.DCArtboard>
+              <window.DCArtboard id="py-2" label="Split receipt" width={390} height={844}>
+                <window.ScreenSplitReceipt theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+
+            {/* ── System / activity ───────────────────────────────────── */}
+            <window.DCSection id="system" title="Cross-cutting — Activity & notifications" subtitle="One inbox for tags, uploads, hide-me, window state.">
+              <window.DCArtboard id="sy-1" label="Activity feed" width={390} height={844}>
+                <window.ScreenActivity theme={theme}/>
+              </window.DCArtboard>
+            </window.DCSection>
+          </window.DesignCanvas>
+
+          <window.TweaksPanel title="Tweaks">
+            <window.TweakSection title="Palette">
+              <window.TweakSelect
+                label="Active palette"
+                value={tweaks.aesthetic}
+                onChange={v => setTweak('aesthetic', v)}
+                options={window.PALETTE_ORDER.map(k => ({ value: k, label: window.PALETTES[k].name }))}
+              />
+              <div style={{ fontSize: 11, color: '#888', marginTop: -2, lineHeight: 1.4, fontStyle: 'italic' }}>
+                {window.PALETTES[tweaks.aesthetic]?.hint}
+              </div>
+            </window.TweakSection>
+            <window.TweakSection title="Demo state">
+              <window.TweakSelect
+                label="Viewing as"
+                value={tweaks.viewer}
+                onChange={v => setTweak('viewer', v)}
+                options={window.PEOPLE.map(p => ({ value: p.id, label: p.name }))}
+              />
+              <window.TweakRadio
+                label="Privacy mode"
+                value={tweaks.privacyMode}
+                onChange={v => setTweak('privacyMode', v)}
+                options={[
+                  { value: 'open', label: 'Open' },
+                  { value: 'face', label: 'Face' },
+                  { value: 'private', label: 'Private' },
+                ]}
+              />
+              <window.TweakRadio
+                label="Album state"
+                value={tweaks.albumState}
+                onChange={v => setTweak('albumState', v)}
+                options={[
+                  { value: 'active', label: 'Active' },
+                  { value: 'closing', label: 'Closing' },
+                  { value: 'locked', label: 'Locked' },
+                ]}
+              />
+            </window.TweakSection>
+          </window.TweaksPanel>
+        </>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>

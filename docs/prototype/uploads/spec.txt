@@ -1,0 +1,217 @@
+Shared Albums App
+Phase 1 Product Spec for Design
+Owner: dj  ·  Date: May 3, 2026  ·  Status: Draft for Design Kickoff
+1. Problem &amp; Vision
+Sharing photos after a group event is broken. After a holiday, a family dinner, or any small-group occasion, people end up scrambling on WhatsApp threads (which crush quality), AirDrop chains (which only work on iPhones), and patchy Google Photos shared albums (which require accounts and feel impersonal). What people actually want is a single beautiful place where the group’s photos live, where everyone contributes, where you only see what is relevant to you, and which becomes a keepsake when the moment is over.
+Our app solves this with time-bounded, group-owned albums that combine original-quality uploads, smart face privacy, and a price model designed to slot into the trip-cost split everyone already does at the end of a holiday.
+2. Target Users
+Friend groups on holidays and weekend trips (the primary persona).
+Families during reunions, dinners, weddings, and birthdays.
+Mixed iOS/Android groups who today fall back to WhatsApp because nothing else works for everyone.
+Hosts who already coordinate the trip and would happily add a small line item to the trip split.
+3. Product Principles
+Trust is the product. Face privacy must feel safe and obvious, not technical or scary. Default copy should explain in one sentence what is happening with someone’s face data.
+Friction kills group apps. Every flow needs a path that works without forcing the other person to install. Web upload via magic link is a hard requirement for MVP.
+Quality is the headline. Lead with &quot;shared at original resolution&quot; everywhere it can be said. Never compress without explicit user choice.
+Time-bounded by design. The 30-day upload window is a feature, not a limitation. Use the deadline to drive contribution and create the keepsake feel.
+Subject has the final say. If two members disagree about a photo, the person in the photo wins. Photographers can still keep their copy privately.
+Pay only when you get value. Three free albums means a user can experience the magic two or three times before being asked to pay. The fourth album is when habit forms.
+Splittable on purpose. Position the per-album cost so it slots into Splitwise or a &quot;trip total&quot; the group is already settling. Make it feel like £1 each, not a paid app.
+4. Monetization
+First 3 albums are free per user (tied to the creator account, lifetime). Every additional album is a one-time in-app purchase. No monthly recurring charges. The price point is intentionally small so it can be folded into a Splitwise-style trip cost split with the rest of the group, alongside the Airbnb and the dinners.
+Apple IAP and Google Play Billing.
+No ads, ever.
+Receipts and a &quot;share to Splitwise&quot; hint surface after the IAP completes.
+Future revenue: print photo books in Phase 3 and an optional family bundle.
+5. Phase 1 Scope (MVP)
+The Phase 1 build delivers the full core loop end-to-end with face privacy included from day one, since the same face-detection layer also powers the personal &quot;Filter Your Photos&quot; view. Cutting privacy from MVP would erode trust on launch and require a painful migration later.
+5.1 Feature List
+Feature
+Description
+Priority
+Onboarding &amp; Auth
+Sign in with Apple, Google, or phone number. Minimum profile: name, profile photo, optional face reference photo (used for face-privacy matching). Skip-friendly onboarding with progressive permission asks.
+P0
+Create Album
+User picks an occasion template (Trip, Wedding, Dinner, Birthday, Other), names the album, sets a cover photo, defines the upload window (default 30 days, configurable), and chooses privacy mode (Open, Face-Privacy, or Private). Album owner becomes the admin.
+P0
+Group Invitations
+Multi-channel invites: shareable link, QR code (great for in-person events), contact picker, native share sheet. Invitees join via link without forced sign-up at first tap (browse-only mode), then prompted to sign in to upload.
+P0
+Web Upload for Non-Users
+Magic-link web uploader so people who do not install the app can still contribute photos at full resolution. Critical for grandparents, hesitant friends, and adoption velocity.
+P0
+Original-Quality Upload
+Photos and videos uploaded at original resolution. No compression. This is the core differentiator vs WhatsApp. Background upload with progress indicator and retry on failure.
+P0
+Photo &amp; Video Support
+Both stills and short videos (cap at e.g. 60 seconds for MVP). Live Photos preserved on iOS where possible.
+P0
+Face Recognition &amp; Tagging
+On-device or server-side face detection runs at upload. Each face is matched against album members reference photos. Members confirm or correct tags. Unrecognized faces appear as &quot;unknown person&quot; clusters that members can claim or label.
+P0
+Face-Privacy Filter
+Album-level toggle in settings. When ON, each viewer only sees: photos they appear in, photos with no people detected, and photos any present member explicitly shared. When OFF, all photos are visible to all members. Same face-detection tech powers the personal &quot;Filter Your Photos&quot; view.
+P0
+Per-Photo Sharing Allowlist
+For any photo I appear in, I can grant view access to a specific member (e.g., my partner) even if face-privacy is on. Simple per-photo or bulk allow flow.
+P0
+Hide Me from a Photo
+Subject veto: any person identified in a photo can hide that photo from the album for everyone. Photographer is notified. This is a privacy must-have for trust.
+P0
+Album Feed &amp; Browsing
+Chronological feed by capture time, with toggle to group by uploader or by detected scene. Smooth full-screen viewer with swipe, pinch-to-zoom, and metadata (uploader, time, location if available).
+P0
+Filter Your Photos
+Inside any album, a one-tap &quot;Just me&quot; view that shows only photos containing the viewer. Reuses the face-privacy detection layer.
+P0
+Album Lifecycle
+Three states: Active (uploads open), Locked (read-only after window closes), Archived (still readable, surfaced in user library). Clear countdown UI as the window closes. Owner can extend the window once before lock.
+P0
+Save to Camera Roll
+One-tap save of any single photo, multi-select, or full album to the device. Maintains original quality.
+P0
+Album Library
+Personal home screen listing every album the user is part of (created or joined), with cover, member count, and status badge.
+P0
+Payments: 3 Free + Pay-Per-Album
+First three albums free per user (lifetime, tied to the album-creator account). Each additional album is a one-time in-app purchase. Designed to be easy to split as a small line item in trip-cost-splitting apps. Apple IAP and Google Play Billing.
+P0
+Notifications
+Push and in-app notifications for: new album invite, new photos uploaded, you were tagged, someone hid a photo of you, window closing in 48 hours, album locked.
+P0
+Settings &amp; Account
+Profile editing, manage face reference photos, notification preferences, privacy defaults, leave album, delete account, support links.
+P0
+
+5.2 Privacy Modes (Album Setting)
+Open: All members see all photos. Face detection still runs in the background to power &quot;Filter Your Photos.&quot; Used for casual events where privacy is a non-issue.
+Face-Privacy (default for trips and weddings): Each viewer sees only photos they appear in, plus photos with no people detected, plus photos that the relevant subject explicitly shared with them.
+Private (creator only review): Optional setting where the creator approves each photo before the rest of the group sees it. Useful for sensitive events.
+5.3 Out of Scope for Phase 1
+Comments and reactions.
+Auto best-of reel and smart scene grouping.
+Print products.
+Family or subscription plans.
+Annual recap.
+RAW upload, watermarks, professional metadata.
+Cross-album search.
+6. Phase 2 (Post-MVP)
+Adds engagement and curation features that make existing albums richer. Targeted to ship within 3-4 months after MVP launch.
+Feature
+Description
+Priority
+Auto Best-Of Reel
+Algorithmic highlight reel (sharp focus, smiles, scene diversity) with optional music. One-tap share or save.
+P1
+Duplicate &amp; Burst Detection
+Auto-collapse near-duplicates and burst sequences into a single thumbnail with expand option. Reduces overload.
+P1
+Comments &amp; Reactions
+Lightweight reactions (heart, laugh, wow) and threaded comments per photo. Subject-veto rules still apply.
+P1
+Smart Scene Grouping
+Auto-group photos by detected event/moment (the dinner, the hike, the beach) using time + location + visual similarity.
+P1
+Album Cover Auto-Pick
+Suggest the best cover photo from the album, with manual override.
+P1
+Voice Notes &amp; Captions
+Attach short voice memos or captions to photos. Useful for preserving stories alongside images.
+P1
+Guest Viewer Mode
+Album owner can grant view-only access to a curated subset for someone outside the group (e.g., a sibling, a parent).
+P1
+Photo Quality Hints
+Surface duplicates, blurry shots, and over-exposed photos at upload time so contributors can pick the best ones.
+P1
+
+7. Phase 3 (Long-term)
+Revenue expansion and re-engagement.
+Feature
+Description
+Priority
+Print Photo Books
+In-app ordering of a printed photo book of the album. High-margin revenue and emotionally resonant.
+P2
+Annual Recap
+End-of-year highlight across every album the user was part of. Drives re-engagement.
+P2
+Album Templates Library
+Expanded set of occasion templates with smart defaults for window length, layout, prompts, and cover suggestions.
+P2
+Family Plan
+Bundle that gives a household unlimited albums for a flat fee, alternative to per-album for heavy users.
+P2
+Memory Map
+Map view of all albums by location for travelers.
+P2
+Itinerary Integration
+Pull from calendar or trip-planning apps to pre-populate an album for a known event.
+P2
+Pro Photographer Mode
+Optional metadata, RAW upload, watermark, and bulk export for users who want to use this for small events professionally.
+P2
+
+8. Key User Flows for Design
+The following flows must be designed end-to-end for Phase 1. Each should be considered for both iOS and Android, with web-upload variants where applicable.
+1. First-time onboarding: Sign in, set name and profile photo, optional face reference, see &quot;Create your first album&quot; empty state.
+2. Creating an album: Pick template, name it, pick window, pick privacy mode, add cover, share invite link.
+3. Joining an album via link: Tap link, browse a teaser of cover and members, sign in to view fully or upload, optional face-reference capture.
+4. Uploading photos: Multi-select from camera roll, see upload progress, see face-detection running, optionally confirm tags.
+5. Face-tagging confirmation: Receive prompt: &quot;Is this you in 12 photos?&quot; with quick yes/no swipe. Bulk action.
+6. Browsing with face-privacy on: Album feed shows only allowed photos; clear empty-state for someone who has not uploaded yet or appears in nothing.
+7. Hiding yourself from a photo: Long-press photo, &quot;Hide me,&quot; confirm; photographer gets a polite notification.
+8. Granting access to my partner: In settings: pick a member, &quot;Show them all photos of me,&quot; confirm.
+9. Window closing transition: Banner countdown 48 and 12 hours before lock. Owner can extend once.
+10. Locked album experience: Read-only badge, prompt to save full album to camera roll, suggested print product (Phase 3).
+11. Paying for an additional album: Hit the 4th album, see paywall with one-time price, IAP, return to album creation.
+12. Splitting cost in a trip: Receipt-style summary the user can copy or share into Splitwise / similar.
+9. Design Considerations
+9.1 Tone and Visual Language
+Warm, optimistic, slightly nostalgic. The album is a keepsake, not a feed.
+Photos lead. Chrome and UI should fade out of the way at viewing time.
+Privacy controls should feel like a reassurance, not a settings maze.
+9.2 Onboarding Care Points
+Face reference capture must be opt-in, with a clear plain-language explanation of why and where it lives.
+Defer permissions (camera roll, push, contacts) until the moment the user benefits from each.
+Empty states across the app should guide the user to the next sensible action, not just say &quot;nothing here.&quot;
+9.3 Edge Cases to Cover
+Member who has not uploaded a face reference and tries to view a face-privacy album.
+Photo with multiple people where one person hides themselves; how is the photo blurred or cropped vs hidden entirely.
+Member added late, after the album is locked.
+Owner removes a member: do their uploaded photos stay or go?
+Failed payment on the 4th album.
+Web uploader on a desktop browser with poor connectivity.
+9.4 Accessibility Requirements
+Full VoiceOver and TalkBack labels on photo controls.
+Sufficient contrast on overlays during full-screen viewing.
+Captions and voice notes (Phase 2) must be accessible.
+10. Success Metrics
+Activation: percentage of new users who create or join an album within 24 hours of install.
+Group formation: percentage of created albums that have 3 or more members uploading.
+Quality of contribution: median photos uploaded per member per album.
+Retention: percentage of users who create or join a second album within 60 days.
+Conversion: percentage of users who reach album 4 and complete the IAP.
+Trust signal: percentage of face-privacy-on albums where zero &quot;hide me&quot; complaints are filed.
+11. Open Questions for Resolution
+To be resolved before or during design, in collaboration with engineering, legal, and product.
+What is the price point for an additional album? Suggest testing two: a low impulse price and a slightly higher &quot;keepsake&quot; price.
+Who pays when the album already has 3 free albums attributed to a user but they are not the creator of this one? Confirm: the creator’s account is what is checked.
+How do we handle a member who refuses to upload a face reference photo? Fallback: they can still view all photos with the owner’s permission, but cannot use Filter Your Photos or be auto-tagged.
+Where does face data live? On-device matching is more private but slower; server-side is faster but needs strong encryption story. Decide before MVP build starts.
+How long are locked albums stored, and at what cost? Suggest forever for paid albums, 12 months for the 3 free ones, with clear export prompts before deletion.
+How do we handle reported content (NSFW, harassment) in a private group album? Need a minimal trust-and-safety flow even at MVP.
+Do we ship iOS first, Android first, or both at launch? Recommend iOS first given AirDrop pain is sharpest there, but Android web-upload must work day one.
+What is the maximum group size for MVP? Suggest 30 members per album. Larger is unbounded complexity for face-matching UX.
+12. Deliverables Expected from Design
+High-fidelity flows for the 12 user flows in Section 8.
+Component library: buttons, sheets, banners, photo cards, full-screen viewer, face-tag chips.
+Privacy explanation patterns: tooltip, full-screen first-run, settings detail.
+Empty states for every feed and list.
+Notification copy and visuals.
+Payment / paywall surface for album 4 and beyond.
+Brand exploration: name candidates, logo direction, color palette.
+Web upload page design (responsive).
+13. Appendix: Naming and Tone Notes
+We have not locked the product name yet. Working name placeholder: &quot;Shared Albums App.&quot; Brand exploration is part of the design phase. Tone candidates to test: keepsake-y and warm (e.g., &quot;Together&quot;), playful and casual (e.g., &quot;Album&quot;), or memory-anchored (e.g., &quot;Moments&quot;)—to be evaluated in design with stakeholder input.

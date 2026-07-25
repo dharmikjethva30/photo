@@ -11,6 +11,7 @@ import (
 )
 
 type Querier interface {
+	AbortUploadSession(ctx context.Context, mediaItemID uuid.UUID) error
 	AddAlbumMember(ctx context.Context, arg AddAlbumMemberParams) (AlbumMember, error)
 	// Called on any change to who can see what. Unused today; it is the cache key for
 	// the scaling path in docs/adr/0005, and bumping it from the start means the
@@ -39,6 +40,11 @@ type Querier interface {
 	CountProcessingMedia(ctx context.Context, albumID uuid.UUID) (int64, error)
 	CreateAlbum(ctx context.Context, arg CreateAlbumParams) (Album, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
+	// A re-declare (same client_media_id after a dropped response) starts a NEW S3
+	// multipart upload, so s3_upload_id and part_size must move together. Updating only
+	// s3_upload_id leaves part_size stale or NULL, and Resume then computes the wrong
+	// part count — an upload that can never be resumed. Reset the abort/complete stamps
+	// too: this is a fresh attempt, not the old one.
 	CreateUploadSession(ctx context.Context, arg CreateUploadSessionParams) (UploadSession, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	// Media queries.
@@ -65,6 +71,7 @@ type Querier interface {
 	// An entitlement not yet spent on an album. `albums.entitlement_id` is UNIQUE, so
 	// "unconsumed" is simply "no album references it".
 	GetUnconsumedEntitlement(ctx context.Context, userID uuid.UUID) (AlbumEntitlement, error)
+	GetUploadSession(ctx context.Context, mediaItemID uuid.UUID) (UploadSession, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	// The sign-in lookup: resolve a provider's subject claim to our user.
 	GetUserByProviderIdentity(ctx context.Context, arg GetUserByProviderIdentityParams) (User, error)

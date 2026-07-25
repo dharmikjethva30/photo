@@ -76,7 +76,15 @@ func NewRouter(d Deps) http.Handler {
 				})
 			})
 
-			r.Post("/uploads/{mediaID}/complete", h.completeUpload)
+			r.Route("/uploads/{mediaID}", func(r chi.Router) {
+				// Resume state and part URLs, for the resumable multipart path.
+				r.Get("/", h.resumeUpload)
+				// POST, not GET: it carries the per-part checksums that have to go
+				// into the signature. See uploadPartURLs.
+				r.Post("/parts", h.uploadPartURLs)
+				r.Post("/complete", h.completeUpload)
+				r.Delete("/", h.abortUpload)
+			})
 
 			// The stable image URL the feed hands out. Re-checks visibility, then
 			// redirects to a short-lived presigned URL.

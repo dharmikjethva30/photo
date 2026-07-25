@@ -34,9 +34,13 @@ const (
 	TypeUploadWindowShut = "upload_window_closed"
 	TypeFreeAlbumsUsed   = "free_albums_exhausted"
 	TypeSizeMismatch     = "upload_size_mismatch"
-	TypeMemberLimit      = "album_member_limit_reached"
-	TypeExtensionUsed    = "window_extension_already_used"
-	TypeConsentRequired  = "face_consent_required"
+	// TypeUploadExpired means the S3 multipart upload is gone (aborted or expired).
+	// The client must re-declare; resuming is no longer possible, and it needs to
+	// tell those two cases apart to avoid retrying forever.
+	TypeUploadExpired   = "upload_expired"
+	TypeMemberLimit     = "album_member_limit_reached"
+	TypeExtensionUsed   = "window_extension_already_used"
+	TypeConsentRequired = "face_consent_required"
 )
 
 // Problem is the wire format. Field names are fixed by RFC 9457.

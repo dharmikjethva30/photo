@@ -218,9 +218,14 @@ tasks:
       - cd {{.API_DIR}} && go run ./cmd/api
 
   worker:
-    desc: Run the Go (river) worker on the host
+    desc: Run the Go scheduled-jobs worker (upload reconciliation)
     cmds:
       - cd {{.API_DIR}} && go run ./cmd/worker
+
+  worker:sweep:
+    desc: Run every scheduled job once and exit, instead of waiting for a tick
+    cmds:
+      - cd {{.API_DIR}} && go run ./cmd/worker -once
 
   mediaworker:
     desc: Run the Python media worker (thumbnails). Required for photos to become viewable.
@@ -404,6 +409,11 @@ tasks:
     desc: End-to-end gate — signin, create album, upload a real photo, read it back
     cmds:
       - bash scripts/smoke.sh
+
+  smoke:multipart:
+    desc: 'Multipart gate — 20 MiB upload, interrupted, resumed from S3, byte-exact'
+    cmds:
+      - bash scripts/smoke-multipart.sh
 
   # --------------------------------------------------------------------- misc
 

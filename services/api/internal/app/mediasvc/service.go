@@ -75,12 +75,30 @@ type DeclareInput struct {
 }
 
 // DeclareResult tells the client where to PUT the bytes.
+//
+// Two shapes, distinguished by Mode. The envelope is the same either way, which is
+// what let multipart land without changing the declare/complete contract.
 type DeclareResult struct {
-	MediaID         uuid.UUID
+	MediaID uuid.UUID
+	// "single" or "multipart".
 	Mode            string
-	Upload          s3store.PresignedPut
 	AlreadyUploaded bool
+
+	// Mode == "single".
+	Upload s3store.PresignedPut
+
+	// Mode == "multipart". Part URLs are NOT here: they require per-part checksums
+	// the client cannot supply until it has read the bytes. It calls PartURLs next.
+	UploadID  string
+	PartSize  int64
+	PartCount int32
 }
+
+// PartBatchSize is how many part URLs are signed at once.
+//
+// Signing all 50 parts of a 400 MB file up front means a large response and 50
+// simultaneously-live credentials; the client asks for the next batch as it goes.
+const PartBatchSize = 20
 
 // Declare validates the request, reserves a media row, and returns an upload plan.
 func (s *Service) Declare(ctx context.Context, in DeclareInput) (DeclareResult, error) {
@@ -117,14 +135,6 @@ func (s *Service) Declare(ctx context.Context, in DeclareInput) (DeclareResult, 
 	album, err := s.albums.CanUpload(ctx, in.AlbumID, in.UserID)
 	if err != nil {
 		return DeclareResult{}, err
-	}
-
-	// M1 ships single-PUT only; the threshold is configured above the test assets.
-	// Multipart lands in M2 WITHOUT changing this envelope — see ADR 0003.
-	if in.ByteSize > s.limits.MultipartThreshold {
-		return DeclareResult{}, problem.Validation(
-			"Files this large need resumable upload, which is not enabled yet.",
-			map[string]string{"byteSize": "exceeds single-upload threshold"})
 	}
 
 	ext := spec.ext
@@ -194,6 +204,50 @@ func (s *Service) Declare(ctx context.Context, in DeclareInput) (DeclareResult, 
 		return DeclareResult{}, problem.Internal(fmt.Errorf("set storage key: %w", err))
 	}
 
+	// The session row is created inside the branch below, ONCE, by whichever mode
+	// wins. Creating it up front and letting the multipart branch update it looked
+	// tidier but left part_size NULL, because the upsert's DO UPDATE only touched
+	// s3_upload_id — and a NULL part_size makes Resume report partCount 0, i.e. an
+	// interrupted upload that can never be resumed.
+
+	// Above the threshold the upload becomes resumable. A 60-second 4K clip is
+	// 200-400 MB, and a single stream of that on a phone network will be
+	// interrupted; with 8 MiB parts an interruption costs one part, not the file.
+	if in.ByteSize > s.limits.MultipartThreshold {
+		uploadID, err := s.store.CreateMultipart(ctx, key, media.ContentType)
+		if err != nil {
+			return DeclareResult{}, problem.Internal(err)
+		}
+
+		partSize := s.limits.MultipartPartSize
+		total := s3store.PartCount(in.ByteSize, partSize)
+
+		// No part URLs here. Signing a part requires that part's SHA-256 (see
+		// s3store.PresignParts), and the client has not read a single byte yet. So
+		// declare returns the PLAN and the client asks for URLs a batch at a time as
+		// it slices and hashes. That also means one code path serves the first batch,
+		// later batches, and re-signing after expiry, instead of three.
+		if _, err := q.CreateUploadSession(ctx, sqlcgen.CreateUploadSessionParams{
+			MediaItemID: media.ID,
+			S3UploadID:  &uploadID,
+			PartSize:    &partSize,
+		}); err != nil {
+			return DeclareResult{}, problem.Internal(fmt.Errorf("update upload session: %w", err))
+		}
+
+		if err := tx.Commit(ctx); err != nil {
+			return DeclareResult{}, problem.Internal(fmt.Errorf("commit: %w", err))
+		}
+
+		return DeclareResult{
+			MediaID:   media.ID,
+			Mode:      "multipart",
+			UploadID:  uploadID,
+			PartSize:  partSize,
+			PartCount: total,
+		}, nil
+	}
+
 	if _, err := q.CreateUploadSession(ctx, sqlcgen.CreateUploadSessionParams{
 		MediaItemID: media.ID,
 	}); err != nil {
@@ -218,7 +272,19 @@ func (s *Service) Declare(ctx context.Context, in DeclareInput) (DeclareResult, 
 // S3 what is really there. Without this, byte_size is a client-controlled number
 // feeding quota accounting and storage cost, and a truncated upload would be served
 // to the album as a valid photo.
-func (s *Service) Complete(ctx context.Context, mediaID, userID uuid.UUID) (sqlcgen.MediaItem, error) {
+// Complete is the single completion entry point for BOTH upload modes.
+//
+// The caller does not say which mode it used, because the server already knows —
+// upload_sessions.s3_upload_id is the record of what was handed out. An earlier version
+// branched on whether the client reported parts, which meant a multipart client that
+// (correctly) sent no parts fell into the single-PUT path and got "we could not find
+// those bytes": the object had never been assembled.
+//
+// claimedParts is optional. When present it is checked against S3, never trusted as
+// input. See CompleteMultipart.
+func (s *Service) Complete(
+	ctx context.Context, mediaID, userID uuid.UUID, claimedParts []s3store.CompletedPart,
+) (sqlcgen.MediaItem, error) {
 	media, err := s.q.GetMediaItem(ctx, mediaID)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -233,6 +299,18 @@ func (s *Service) Complete(ctx context.Context, mediaID, userID uuid.UUID) (sqlc
 	if media.State != sqlcgen.MediaStatePending {
 		// Idempotent: a retried /complete is a success, not a conflict.
 		return media, nil
+	}
+
+	// A multipart upload is a pile of parts until S3 is told to assemble them, so that
+	// has to happen before there is an object to verify.
+	session, err := s.q.GetUploadSession(ctx, mediaID)
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
+		return sqlcgen.MediaItem{}, problem.Internal(fmt.Errorf("get upload session: %w", err))
+	}
+	if err == nil && session.S3UploadID != nil {
+		if assembleErr := s.assembleMultipart(ctx, media, session, claimedParts); assembleErr != nil {
+			return sqlcgen.MediaItem{}, assembleErr
+		}
 	}
 
 	info, err := s.store.Head(ctx, s.store.MediaBucket(), media.StorageKey)

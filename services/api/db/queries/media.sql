@@ -36,9 +36,18 @@ RETURNING *;
 SELECT * FROM media_items WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: CreateUploadSession :one
+-- A re-declare (same client_media_id after a dropped response) starts a NEW S3
+-- multipart upload, so s3_upload_id and part_size must move together. Updating only
+-- s3_upload_id leaves part_size stale or NULL, and Resume then computes the wrong
+-- part count — an upload that can never be resumed. Reset the abort/complete stamps
+-- too: this is a fresh attempt, not the old one.
 INSERT INTO upload_sessions (media_item_id, s3_upload_id, part_size)
 VALUES ($1, $2, $3)
-ON CONFLICT (media_item_id) DO UPDATE SET s3_upload_id = EXCLUDED.s3_upload_id
+ON CONFLICT (media_item_id) DO UPDATE
+   SET s3_upload_id = EXCLUDED.s3_upload_id,
+       part_size    = EXCLUDED.part_size,
+       completed_at = NULL,
+       aborted_at   = NULL
 RETURNING *;
 
 -- name: MarkMediaUploaded :one
@@ -104,3 +113,9 @@ VALUES ($1, $2, $3)
 ON CONFLICT (media_item_id, kind) WHERE state IN ('queued', 'running')
 DO UPDATE SET run_after = now()
 RETURNING *;
+
+-- name: GetUploadSession :one
+SELECT * FROM upload_sessions WHERE media_item_id = $1;
+
+-- name: AbortUploadSession :exec
+UPDATE upload_sessions SET aborted_at = now() WHERE media_item_id = $1;

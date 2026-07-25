@@ -6,6 +6,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 
+	"github.com/dharmikjethva30/photo/services/api/internal/adapter/s3store"
 	"github.com/dharmikjethva30/photo/services/api/internal/app/mediasvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/platform/problem"
 )
@@ -72,15 +73,89 @@ func (h *Handlers) declareUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respondJSON(w, r, http.StatusCreated, map[string]any{
+	// `plan` rather than `body`: `body` is already the decoded request above.
+	plan := map[string]any{
 		"mediaId": res.MediaID.String(),
 		"mode":    res.Mode,
-		"upload": map[string]any{
+	}
+	if res.Mode == "multipart" {
+		plan["uploadId"] = res.UploadID
+		plan["partSize"] = res.PartSize
+		plan["partCount"] = res.PartCount
+		// No part URLs: the client posts each part's checksum to /parts to get them.
+	} else {
+		plan["upload"] = map[string]any{
 			"url":       res.Upload.URL,
 			"headers":   res.Upload.Headers,
 			"expiresAt": res.Upload.ExpiresAt,
-		},
-	})
+		}
+	}
+	respondJSON(w, r, http.StatusCreated, plan)
+}
+
+// resumeUpload handles GET /v1/uploads/{mediaID}.
+//
+// The answer comes from S3, not from client bookkeeping: a client killed mid-part
+// cannot know whether that part landed, and guessing either re-uploads needlessly or
+// skips a gap and assembles a corrupt object.
+func (h *Handlers) resumeUpload(w http.ResponseWriter, r *http.Request) {
+	mediaID, err := parseUUIDParam(chi.URLParam(r, "mediaID"), "upload")
+	if err != nil {
+		respond(w, r, err)
+		return
+	}
+	state, err := h.Media.Resume(r.Context(), mediaID, userID(r))
+	if err != nil {
+		respond(w, r, err)
+		return
+	}
+	respondJSON(w, r, http.StatusOK, state)
+}
+
+// uploadPartURLs handles POST /v1/uploads/{mediaID}/parts.
+//
+// POST rather than GET because it carries a body: each requested part comes with the
+// SHA-256 of its bytes, which has to be inside the signature (see
+// s3store.PresignParts). Nothing is created, but a GET with a body is not a thing, and
+// these URLs must never be cached anyway.
+//
+// Also the recovery path for presign expiry: a 400 MB upload on slow wifi can outlive
+// its signatures, and the failure otherwise surfaces as a 403 on part 37.
+func (h *Handlers) uploadPartURLs(w http.ResponseWriter, r *http.Request) {
+	mediaID, err := parseUUIDParam(chi.URLParam(r, "mediaID"), "upload")
+	if err != nil {
+		respond(w, r, err)
+		return
+	}
+
+	var body struct {
+		Parts []s3store.PartToSign `json:"parts"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		respond(w, r, err)
+		return
+	}
+
+	parts, err := h.Media.PartURLs(r.Context(), mediaID, userID(r), body.Parts)
+	if err != nil {
+		respond(w, r, err)
+		return
+	}
+	respondJSON(w, r, http.StatusOK, map[string]any{"parts": parts})
+}
+
+// abortUpload handles DELETE /v1/uploads/{mediaID}.
+func (h *Handlers) abortUpload(w http.ResponseWriter, r *http.Request) {
+	mediaID, err := parseUUIDParam(chi.URLParam(r, "mediaID"), "upload")
+	if err != nil {
+		respond(w, r, err)
+		return
+	}
+	if err := h.Media.AbortUpload(r.Context(), mediaID, userID(r)); err != nil {
+		respond(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }
 
 // completeUpload handles POST /v1/uploads/{mediaID}/complete.
@@ -91,7 +166,21 @@ func (h *Handlers) completeUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	media, err := h.Media.Complete(r.Context(), mediaID, userID(r))
+	// One endpoint and one service call for both modes. The body is OPTIONAL: the
+	// server reads the mode from the upload session and sources the multipart part
+	// list from S3, so a client that only remembers the mediaId can still finish.
+	// Any parts the client does report are checked against S3, not trusted.
+	var body struct {
+		Parts []s3store.CompletedPart `json:"parts"`
+	}
+	if r.ContentLength > 0 {
+		if decErr := decodeJSON(r, &body); decErr != nil {
+			respond(w, r, decErr)
+			return
+		}
+	}
+
+	media, err := h.Media.Complete(r.Context(), mediaID, userID(r), body.Parts)
 	if err != nil {
 		respond(w, r, err)
 		return

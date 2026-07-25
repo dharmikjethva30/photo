@@ -51,6 +51,52 @@ file. This *is* the answer to the spec's "web uploader on poor connectivity" edg
 case: the browser holds a `File`, slices it with `Blob.slice()`, and persists
 progress in IndexedDB so a tab reload resumes.
 
+### Part URLs are signed per-part WITH that part's SHA-256, so declare returns no URLs
+
+This one is forced by S3, and it was discovered the hard way — the first
+implementation worked perfectly against LocalStack and would have failed in
+production.
+
+The multipart upload is created with `ChecksumAlgorithm: SHA256`, so S3 requires an
+`x-amz-checksum-sha256` header on **every** `UploadPart`. SigV4 rejects any `x-amz-*`
+header that the signature did not cover: *"There were headers present in the request
+which were not signed."* So the checksum cannot be added by the client to a URL that
+was signed without it — the value has to be baked in at signing time. **LocalStack
+accepts the unsigned header**, which makes this exactly the class of
+works-locally/fails-in-production divergence this ADR exists to prevent.
+
+Three consequences, all of which shape the client:
+
+1. **`POST /v1/albums/{id}/uploads` (declare) returns no part URLs at all** — only
+   `{mediaId, uploadId, partSize, partCount}`. It cannot sign anything, because the
+   client has not read a byte yet.
+2. **`POST /v1/uploads/{id}/parts`** carries `[{partNumber, sha256}]` and returns the
+   signed URLs. POST rather than GET because it has a body. One code path serves the
+   first batch, later batches, and re-signing after expiry, instead of three.
+3. **The client hashes each part as it slices it.** An 8 MiB hash is instant; hashing
+   400 MB up front before the first byte moves would stall the upload.
+
+Rejected alternative: S3's `FULL_OBJECT` checksum type, where the whole-object hash is
+supplied once at completion and parts need no headers. Not available — `FULL_OBJECT`
+works only with the composable CRC algorithms, and SHA-256 cannot be composed from
+part hashes. (`CreateMultipartUpload` rejects the combination outright.)
+
+### `/complete` takes no body, because the part list comes from S3
+
+`CompleteMultipartUpload` also requires each part's checksum, and S3 is the only
+party that has them all — it computed them on arrival. So completion calls `ListParts`
+and uses that, exactly as resume does.
+
+The payoff is on the client: **it never has to persist ETags.** Across an app kill it
+needs only `{mediaId, uploadId}`, which is one fewer thing to lose and one fewer way
+to assemble a corrupt object. A client may still report what it thinks it uploaded, and
+then it is checked against S3 — treated as a claim to verify, never as input.
+
+Corollary, and a bug this caused: `/complete` must **not** branch on whether the client
+sent parts. Mode is a server-side fact (`upload_sessions.s3_upload_id`). Branching on
+the body meant a correct multipart client that sent no parts fell into the single-PUT
+path and got "we could not find those bytes" — the object had never been assembled.
+
 ### The client callback is authoritative; S3 events are not
 
 Three reasons:

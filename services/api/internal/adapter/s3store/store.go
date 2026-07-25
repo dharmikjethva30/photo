@@ -164,6 +164,10 @@ type ObjectInfo struct {
 // yet" from a real S3 failure.
 var ErrNotFound = errors.New("object not found")
 
+// ErrChecksumRequired reports a part-URL request with no SHA-256. Signing without it
+// would produce a URL that S3 rejects, so this fails loudly at the caller instead.
+var ErrChecksumRequired = errors.New("a base64 sha256 is required for each part")
+
 // Head reads object metadata. This is the trust boundary of the upload protocol:
 // the client DECLARED a size and checksum up front, and this is where we verify
 // what actually landed. Without it, byte_size is a client-controlled number

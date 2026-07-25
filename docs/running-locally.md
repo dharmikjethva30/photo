@@ -57,9 +57,39 @@ constraint, not a rendering bug.
 
 ## Checking the backend without the app
 
+The one command that matters:
+
+```bash
+task smoke
+```
+
+It drives the real API against real Postgres and real S3 — sign in, rotate a
+refresh token, create an album, declare an upload, PUT bytes to S3, complete,
+read the feed, follow the image redirect, download the original — and asserts the
+downloaded original is **byte-for-byte identical** to what went up. That is the
+regression test for "original quality, no compression, ever".
+
+It also proves the things easiest to break later: declare is idempotent, a reused
+refresh token is rejected, an unprocessed photo does not appear in the feed, an
+unauthenticated image request is 401, and a non-member gets **404 rather than 403**
+(a 403 would confirm the photo exists).
+
 ```bash
 curl -s localhost:8080/healthz | jq        # liveness
 curl -s localhost:8080/readyz  | jq        # real Postgres + S3 probes
+curl -s localhost:8080/.well-known/jwks.json | jq   # access-token verification key
+```
+
+Signing in by hand — `APP_ENV=local` accepts any token as a stable fake identity,
+so no Apple or Google credentials are needed:
+
+```bash
+TOKEN=$(curl -s -X POST localhost:8080/v1/auth/apple \
+  -H 'Content-Type: application/json' -d '{"idToken":"me"}' | jq -r .accessToken)
+
+curl -s -H "Authorization: Bearer $TOKEN" localhost:8080/v1/me | jq
+curl -s -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"title":"Lisbon, March","template":"trip"}' localhost:8080/v1/albums | jq
 ```
 
 To prove readiness is genuine rather than hardcoded:
@@ -106,16 +136,23 @@ cannot be re-pointed at the LAN address afterwards. See
 
 ## What you can and cannot test yet
 
-**Can:**
-- The design system on a real device — type scale, all three fonts, icons, blur,
-  every palette
-- The Go API's health and readiness, including the failure path
-- The database schema and every business-rule constraint
-- The local S3 setup (buckets, CORS, lifecycle rules)
+**Can, via the API (`task smoke`, or curl):**
+- Sign in, refresh and rotate tokens, read and edit the profile
+- Create an album (consuming a free slot, capped at three by the database)
+- Upload a photo at original quality and get it back byte-for-byte
+- Read an album feed, with the face-privacy predicate applied
+- Authorized image URLs, including the 404-not-403 behaviour for non-members
 
-**Cannot yet** — these land with the rest of M1:
-- Signing in, creating an album, uploading a photo, browsing a feed
-- Anything face-related
+**Can, on the emulator:**
+- The design system — type scale, all three fonts, 37 icons, blur, every palette
+
+**Cannot yet:**
+- Any of the above **from the app**. The mobile API client and the real
+  library/feed/viewer screens are the next step (M1.10).
+- Thumbnails. The Python media worker (M1.7) generates them; until then a photo
+  reaches `uploaded` and its jobs are queued, but nothing flips it to `ready`.
+  The smoke script fakes that one step and says so inline.
+- Anything face-related. Detection and matching land in M4.
 
 There is deliberately **no** library or album screen showing sample albums. A
 screen full of invented data looks like progress while proving nothing, and the

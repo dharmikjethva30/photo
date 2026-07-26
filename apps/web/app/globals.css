@@ -1,0 +1,29 @@
+/* Fonts are served from public/fonts (the M0 pipeline put the subsetted statics
+   there). The @font-face rules live in that file so the web and the mobile app share
+   one source of font truth. */
+@import url("/fonts/fonts.css");
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}

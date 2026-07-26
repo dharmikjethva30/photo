@@ -222,6 +222,15 @@ tasks:
     cmds:
       - cd {{.API_DIR}} && go run ./cmd/worker
 
+  web:
+    desc: Run the Next.js web app (invite landings, app-association files)
+    env:
+      # Server-side fetches to the API. localhost works from the Next server on the
+      # host; point at the API's internal address in a containerised deploy.
+      API_INTERNAL_URL: '{{.API_INTERNAL_URL | default "http://localhost:8080"}}'
+    cmds:
+      - pnpm --filter @photu/web run dev
+
   worker:sweep:
     desc: Run every scheduled job once and exit, instead of waiting for a tick
     cmds:
@@ -419,6 +428,16 @@ tasks:
     desc: 'HEIC + video gate — decode, poster, probe; originals byte-exact (needs ffmpeg)'
     cmds:
       - bash scripts/smoke-media.sh
+
+  smoke:web:
+    desc: 'Web gate — invite landing renders + unfurls, app-links served (needs task web)'
+    cmds:
+      - bash scripts/smoke-web.sh
+
+  smoke:invites:
+    desc: 'Invites gate — mint, preview, join, single-use, revoke'
+    cmds:
+      - bash scripts/smoke-invites.sh
 
   # --------------------------------------------------------------------- misc
 

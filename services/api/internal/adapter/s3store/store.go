@@ -109,8 +109,17 @@ type PresignedPut struct {
 func (s *Store) PresignPut(
 	ctx context.Context, key, contentType string, sizeBytes int64, sha256B64 string,
 ) (PresignedPut, error) {
+	return s.PresignPutTo(ctx, s.mediaBucket, key, contentType, sizeBytes, sha256B64)
+}
+
+// PresignPutTo is PresignPut with an explicit bucket. Face reference selfies go into
+// the facedata bucket (its own KMS key and retention — ADR 0006), so the caller must
+// be able to name it rather than always getting the media bucket.
+func (s *Store) PresignPutTo(
+	ctx context.Context, bucket, key, contentType string, sizeBytes int64, sha256B64 string,
+) (PresignedPut, error) {
 	in := &s3.PutObjectInput{
-		Bucket:        aws.String(s.mediaBucket),
+		Bucket:        aws.String(bucket),
 		Key:           aws.String(key),
 		ContentType:   aws.String(contentType),
 		ContentLength: aws.Int64(sizeBytes),
@@ -212,6 +221,45 @@ func (s *Store) Delete(ctx context.Context, bucket, key string) error {
 		return fmt.Errorf("delete object %s: %w", key, err)
 	}
 	return nil
+}
+
+// DeletePrefix removes every object under a prefix, returning how many it deleted.
+//
+// This is the physical half of GDPR erasure: "delete my face data" must be a provable
+// prefix delete (users/{id}/refs/…, albums/*/crops/… by face), which is exactly why
+// face data lives in its own bucket (ADR 0006). Paginates + batch-deletes so a user
+// with thousands of face crops erases in a bounded number of round trips.
+func (s *Store) DeletePrefix(ctx context.Context, bucket, prefix string) (int, error) {
+	deleted := 0
+	var token *string
+	for {
+		page, err := s.internal.ListObjectsV2(ctx, &s3.ListObjectsV2Input{
+			Bucket:            aws.String(bucket),
+			Prefix:            aws.String(prefix),
+			ContinuationToken: token,
+		})
+		if err != nil {
+			return deleted, fmt.Errorf("list %s/%s: %w", bucket, prefix, err)
+		}
+		if len(page.Contents) > 0 {
+			ids := make([]types.ObjectIdentifier, 0, len(page.Contents))
+			for _, o := range page.Contents {
+				ids = append(ids, types.ObjectIdentifier{Key: o.Key})
+			}
+			if _, err := s.internal.DeleteObjects(ctx, &s3.DeleteObjectsInput{
+				Bucket: aws.String(bucket),
+				Delete: &types.Delete{Objects: ids, Quiet: aws.Bool(true)},
+			}); err != nil {
+				return deleted, fmt.Errorf("delete batch under %s: %w", prefix, err)
+			}
+			deleted += len(ids)
+		}
+		if page.IsTruncated == nil || !*page.IsTruncated {
+			break
+		}
+		token = page.NextContinuationToken
+	}
+	return deleted, nil
 }
 
 // --- key layout ------------------------------------------------------------

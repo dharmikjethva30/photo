@@ -70,6 +70,17 @@ func NewRouter(d Deps) http.Handler {
 			r.Get("/me", h.getMe)
 			r.Patch("/me", h.updateMe)
 
+			// Biometric consent + face reference selfies (M4). Consent gates the
+			// reference upload server-side; face-data is the GDPR erasure path.
+			r.Get("/me/face-consent", h.getFaceConsent)
+			r.Post("/me/face-consent", h.grantFaceConsent)
+			r.Delete("/me/face-consent", h.revokeFaceConsent)
+			r.Get("/me/face-references", h.listFaceReferences)
+			r.Post("/me/face-references", h.declareFaceReference)
+			r.Post("/me/face-references/{referenceID}/complete", h.completeFaceReference)
+			r.Delete("/me/face-references/{referenceID}", h.deleteFaceReference)
+			r.Delete("/me/face-data", h.eraseFaceData)
+
 			r.Route("/albums", func(r chi.Router) {
 				r.Post("/", h.createAlbum)
 				r.Get("/", h.listAlbums)

@@ -439,6 +439,11 @@ tasks:
     cmds:
       - bash scripts/smoke-invites.sh
 
+  smoke:faces:
+    desc: 'Faces gate — consent gates collection; GDPR erasure hard-deletes rows + objects'
+    cmds:
+      - bash scripts/smoke-faces.sh
+
   # --------------------------------------------------------------------- misc
 
   keys:dev:

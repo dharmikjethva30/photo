@@ -45,6 +45,26 @@ type Querier interface {
 	// looks lost when it is merely still being processed.
 	CountProcessingMedia(ctx context.Context, albumID uuid.UUID) (int64, error)
 	CreateAlbum(ctx context.Context, arg CreateAlbumParams) (Album, error)
+	// Face queries: consent, reference selfies, and GDPR erasure.
+	//
+	// Face data is GDPR Art. 9 / BIPA biometric data. Two rules shape everything here:
+	//   1. Nothing is collected without an ACTIVE consent row (checked before any write).
+	//   2. Erasure is a HARD delete — a deleted_at on biometric data does not satisfy a
+	//      right-to-erasure request, so the erasure queries below DELETE, they do not
+	//      soft-flag. (Ordinary reference replacement uses the soft delete; erasure does
+	//      not.)
+	// Records a consent event with the exact copy version shown and evidence of it, so we
+	// can demonstrate WHAT was consented to, not just that a box was ticked.
+	CreateFaceConsent(ctx context.Context, arg CreateFaceConsentParams) (FaceConsent, error)
+	// Inserted at COMPLETE, after HeadObject has confirmed the selfie is in the facedata
+	// bucket. embedding is NULL until the face worker computes it (that is a later job);
+	// model_id is stamped now so a model upgrade is a re-embed migration, not silent
+	// cross-space comparison.
+	//
+	// The embedding column is NEVER selected back into the API: it is nullable, and the
+	// API only needs to know processed-or-not, so `(embedding IS NOT NULL)` gives that as
+	// a bool without decoding a (possibly NULL) vector.
+	CreateFaceReference(ctx context.Context, arg CreateFaceReferenceParams) (CreateFaceReferenceRow, error)
 	// Invite queries.
 	//
 	// An invite CODE is a public, shareable identifier with no authority of its own:
@@ -76,6 +96,18 @@ type Querier interface {
 	// harmless.
 	EnqueueMediaJob(ctx context.Context, arg EnqueueMediaJobParams) (MediaJob, error)
 	EnsureNotificationPrefs(ctx context.Context, userID uuid.UUID) error
+	EraseUserFaceConsents(ctx context.Context, userID uuid.UUID) error
+	// --- ERASURE (hard delete) -------------------------------------------------
+	// Each returns what it removed so the erasure endpoint can report a provable count.
+	EraseUserFaceReferences(ctx context.Context, userID uuid.UUID) ([]string, error)
+	EraseUserFaceTags(ctx context.Context, userID uuid.UUID) error
+	// Removing the user's subject rows also revokes the visibility their presence granted
+	// (the sync trigger keeps media_items in step). Correct: erased face data must stop
+	// being the basis for who-sees-what.
+	EraseUserMediaSubjects(ctx context.Context, userID uuid.UUID) error
+	// The most recent un-revoked consent, or no row. This is the gate every face write
+	// checks; a NULL result must fail closed (refuse the write).
+	GetActiveFaceConsent(ctx context.Context, userID uuid.UUID) (FaceConsent, error)
 	GetAlbum(ctx context.Context, id uuid.UUID) (Album, error)
 	GetAlbumMember(ctx context.Context, arg GetAlbumMemberParams) (AlbumMember, error)
 	// The row plus the album title and cover, which the join/landing screen shows before
@@ -96,6 +128,7 @@ type Querier interface {
 	// The library screen. Ordered newest-active-first, which is how the design shows
 	// it: live albums on top, keepsakes below.
 	ListAlbumsForUser(ctx context.Context, arg ListAlbumsForUserParams) ([]Album, error)
+	ListFaceReferences(ctx context.Context, userID uuid.UUID) ([]ListFaceReferencesRow, error)
 	// The reconciler's input: uploads whose client died between the last PUT and the
 	// /complete call. See docs/adr/0003.
 	ListStalePendingUploads(ctx context.Context, arg ListStalePendingUploadsParams) ([]MediaItem, error)
@@ -107,6 +140,9 @@ type Querier interface {
 	// Called only after HeadObject has verified the bytes against the declared size
 	// and checksum. That verification is the trust boundary of the whole protocol.
 	MarkMediaUploaded(ctx context.Context, arg MarkMediaUploadedParams) (MediaItem, error)
+	// Withdraw consent. Revoking does not itself erase data (that is DELETE /me/face-data);
+	// it stops future processing. Idempotent.
+	RevokeFaceConsent(ctx context.Context, userID uuid.UUID) error
 	// Idempotent and ownership-scoped in one statement: the album_id predicate means a
 	// caller can only revoke an invite belonging to an album they passed authorization
 	// for, and re-revoking is a no-op that still returns the row.
@@ -118,6 +154,9 @@ type Querier interface {
 	// a token that already has one is being replayed.
 	RotateRefreshToken(ctx context.Context, arg RotateRefreshTokenParams) error
 	SetAlbumCover(ctx context.Context, arg SetAlbumCoverParams) error
+	// Ordinary retire-a-reference (the user replaced their selfie). Ownership-scoped, and
+	// returns the storage_key so the caller can delete the S3 object too. NOT erasure.
+	SoftDeleteFaceReference(ctx context.Context, arg SoftDeleteFaceReferenceParams) (SoftDeleteFaceReferenceRow, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	// Idempotent on (provider, subject) so repeated sign-ins just refresh
 	// last_login_at rather than failing on the unique constraint.

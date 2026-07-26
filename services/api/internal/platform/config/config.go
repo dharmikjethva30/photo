@@ -105,6 +105,11 @@ type Faces struct {
 	// rates are known to be uneven across skin tone, age and gender.
 	MatchThreshold float64 `env:"FACE_MATCH_THRESHOLD" envDefault:"0.62"`
 	WeakThreshold  float64 `env:"FACE_WEAK_THRESHOLD" envDefault:"0.45"`
+	// ConsentVersion identifies the current explanatory copy a user must be shown to
+	// consent to face processing. Stamped onto every consent row so we can prove what
+	// was agreed to; bump it whenever the copy materially changes, which invalidates
+	// nothing already granted but is the version new consents record.
+	ConsentVersion string `env:"FACE_CONSENT_VERSION" envDefault:"face-consent-2026-07"`
 }
 
 type Limits struct {

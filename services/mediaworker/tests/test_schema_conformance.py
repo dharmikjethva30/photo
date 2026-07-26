@@ -72,6 +72,41 @@ REQUIRED: dict[str, set[str]] = {
         "rotation_deg",
         "has_audio",
     },
+    # Written by the face lane (faces.handle_face / embed_pending_references).
+    "faces": {
+        "id",
+        "media_item_id",
+        "album_id",
+        "bbox_x",
+        "bbox_y",
+        "bbox_w",
+        "bbox_h",
+        "embedding",
+        "model_id",
+        "det_score",
+        "blur_score",
+        "yaw",
+        "pitch",
+        "crop_key",
+    },
+    "face_tags": {
+        "media_item_id",
+        "album_id",
+        "face_id",
+        "user_id",
+        "source",
+        "status",
+        "similarity",
+    },
+    "face_references": {
+        "id",
+        "user_id",
+        "storage_key",
+        "embedding",
+        "model_id",
+        "det_score",
+        "deleted_at",
+    },
 }
 
 # Enum labels the worker writes as literals.
@@ -79,6 +114,9 @@ REQUIRED_ENUM_LABELS: dict[str, set[str]] = {
     "media_state": {"pending", "uploaded", "ready", "failed"},
     "job_state": {"queued", "running", "done", "failed"},
     "processing_state": {"queued", "running", "done", "failed"},
+    # The face lane writes these literals; a rename would fail one photo at runtime.
+    "face_tag_source": {"auto_match"},
+    "face_tag_status": {"suggested"},
 }
 
 

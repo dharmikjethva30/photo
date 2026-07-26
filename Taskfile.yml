@@ -444,6 +444,16 @@ tasks:
     cmds:
       - bash scripts/smoke-faces.sh
 
+  smoke:faces-match:
+    desc: 'Face matching — real detection + recognition; suggested-only never leaks (needs face worker)'
+    cmds:
+      - bash scripts/smoke-faces-match.sh
+
+  mediaworker:faces:
+    desc: 'Run the Python media worker FACE lane (InsightFace/ArcFace; loads ~300MB model)'
+    cmds:
+      - cd {{.WORKER_DIR}} && uv run python -m mediaworker --kinds=face
+
   # --------------------------------------------------------------------- misc
 
   keys:dev:

@@ -64,6 +64,29 @@ class Settings(BaseSettings):
     backoff_base_seconds: float = 10.0
     backoff_max_seconds: float = 600.0
 
+    # --- faces (the M4 face lane) ------------------------------------------
+    # The recognition model. Same identifier the Go API stamps on embeddings
+    # (FACE_MODEL_ID) so a model upgrade is a detectable re-embed migration, not a
+    # silent cross-space comparison. The name after the colon is the InsightFace
+    # model pack; buffalo_l bundles SCRFD detection + a 512-d ArcFace recogniser.
+    face_model_id: str = Field(default="insightface:buffalo_l:1", alias="FACE_MODEL_ID")
+    face_model_pack: str = "buffalo_l"
+
+    # Match thresholds on cosine similarity of L2-normalised embeddings. Config, never
+    # constants: published ArcFace numbers do not transfer across checkpoints or
+    # demographics. >= match -> a SUGGESTED tag (never auto-confirmed, so a matcher
+    # error cannot leak a photo — it produces a suggestion someone declines).
+    face_match_threshold: float = Field(default=0.62, alias="FACE_MATCH_THRESHOLD")
+
+    # Detections below this confidence, or too blurry / too far off-axis, are DROPPED
+    # rather than matched at a lower bar — a low threshold degrades accuracy unevenly
+    # across demographics, which is an ethics problem, not just a tuning one.
+    face_min_det_score: float = 0.5
+
+    # Detector input size. Larger finds smaller faces at more cost; 640 is the
+    # InsightFace default and ample for group photos.
+    face_det_size: int = 640
+
     # Decode cap for untrusted input. A 200-byte PNG can declare 60000x60000 and
     # Pillow will happily try to allocate it (a decompression bomb); this is the
     # ceiling in *pixels*, which is what actually bounds the allocation.

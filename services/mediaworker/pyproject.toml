@@ -9,6 +9,10 @@ requires-python = ">=3.12,<3.13"
 # and discovering that at model-integration time is worse than pinning now.
 dependencies = [
     "boto3>=1.35",
+    "insightface>=1.0.1",
+    "onnxruntime>=1.28.0",
+    "opencv-python-headless>=5.0.0.93",
+    "pgvector>=0.5.0",
     "pillow>=11.0",
     # HEIC is the default iPhone format and Pillow cannot decode it alone. Nothing
     # on Android or in a browser renders HEIC either, which is why renditions are

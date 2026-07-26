@@ -93,3 +93,12 @@ def rendition_key(album_id: str, media_id: str, name: str) -> str:
     conformance test cannot catch it because both sides are just strings.
     """
     return f"albums/{album_id}/rend/{media_id}/{name}.jpg"
+
+
+def face_crop_key(album_id: str, face_id: str) -> str:
+    """Mirror of s3store.FaceCropKey in the Go API.
+
+    Face crops live in the FACEDATA bucket (own KMS key, own retention), album-scoped
+    and keyed by face id so "delete album" and face-data erasure are both prefix deletes.
+    """
+    return f"albums/{album_id}/crops/{face_id}.jpg"

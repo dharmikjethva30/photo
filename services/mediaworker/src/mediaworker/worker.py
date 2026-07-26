@@ -18,6 +18,7 @@ import psycopg
 
 from .config import Settings
 from .derive import configure_decoder, handle_thumbnail
+from .faces import embed_pending_references, handle_face
 from .queue import Job, JobQueue, PermanentFailure
 from .store import ObjectStore
 
@@ -36,14 +37,13 @@ class Context:
 
 Handler = Callable[[Context, Job], None]
 
-# The `face` kind exists in the schema's CHECK constraint and Taskfile.yml launches
-# this worker with `--kinds=thumbnail,face`, but face detection is M4: it needs a
-# ~300 MB ONNX model and versioned biometric consent (docs/adr/0005). It is absent
-# here rather than stubbed, because a stub that marked face jobs 'done' would set
-# face_proc_state = 'done' with zero faces and hand every photo in a face-privacy
-# album to every member.
+# The face lane (M4) needs a ~300 MB ONNX model, so it is a SEPARATE deployment
+# (--kinds=face) from the fast thumbnail lane — 2 s inference must never block the
+# grid. Auto-matching only ever suggests; media_subjects is trigger-written from
+# CONFIRMED tags, so a matcher error cannot leak a photo (docs/adr/0005).
 HANDLERS: dict[str, Handler] = {
     "thumbnail": handle_thumbnail,
+    "face": handle_face,
 }
 
 
@@ -89,6 +89,18 @@ class Worker:
         # autocommit: LISTEN only takes effect when its transaction commits, so
         # inside an implicit transaction it would register and then never deliver.
         with psycopg.connect(self.settings.database_url, autocommit=True) as conn:
+            # Register pgvector so face embeddings round-trip as numpy arrays: written
+            # from a np.ndarray param and read back as one for cosine matching. Only the
+            # face lane touches vectors, so a failure to register (older setups) is a
+            # warning, not fatal, for a thumbnail-only worker.
+            if "face" in self.kinds:
+                try:
+                    from pgvector.psycopg import register_vector
+
+                    register_vector(conn)
+                except Exception as exc:  # noqa: BLE001
+                    log.warning("could not register pgvector types", extra={"err": str(exc)})
+
             store = ObjectStore(self.settings)
             ctx = Context(settings=self.settings, conn=conn, store=store)
             queue = JobQueue(
@@ -108,9 +120,18 @@ class Worker:
                 extra={"worker_id": self.settings.worker_id, "kinds": self.kinds},
             )
 
+            faces_enabled = "face" in self.kinds
             while not self._stopping:
                 job = queue.claim()
                 if job is None:
+                    # Idle: embed any just-uploaded reference selfies so a member becomes
+                    # matchable and onboarding can show the selfie as ready, without
+                    # waiting for a photo upload to force it. Cheap when nothing pends.
+                    if faces_enabled:
+                        try:
+                            embed_pending_references(ctx)
+                        except Exception as exc:  # noqa: BLE001
+                            log.warning("reference sweep failed", extra={"err": str(exc)})
                     queue.wait(self.settings.poll_timeout_seconds)
                     continue
                 run_job(ctx, queue, job)

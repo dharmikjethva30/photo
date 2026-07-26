@@ -147,6 +147,45 @@ bfeed=$(curl -sf "$API/v1/albums/$ALBUM/media" -H "Authorization: Bearer $B" | j
 [ "$bfeed" = "0" ] || fail "B can see $bfeed photos from suggestions alone — face-privacy leak"
 pass "suggested-only ≠ visible: B is not a subject and sees 0 photos until confirming"
 
+step "B confirms the suggestion — this is what grants visibility (M4.4)"
+# B lists their own pending suggestions and finds exactly this photo.
+sugg=$(curl -sf "$API/v1/albums/$ALBUM/my-suggested-tags" -H "Authorization: Bearer $B")
+TAGID=$(echo "$sugg" | jq -r --arg m "$MID" '.suggestions[] | select(.mediaId==$m) | .tagId' | head -1)
+[ -n "$TAGID" ] && [ "$TAGID" != "null" ] || fail "B's suggested-tags list did not include the group photo"
+pass "B sees the pending suggestion (tag $TAGID)"
+
+# A cannot confirm B's tag — only the tagged person decides their own tag. 404 (not 403)
+# so the endpoint never confirms that a tag for someone else even exists.
+acode=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  "$API/v1/face-tags/$TAGID/confirm" -H "Authorization: Bearer $A")
+[ "$acode" = "404" ] || fail "A was able to act on B's tag (HTTP $acode) — only the tagged person may decide"
+pass "A cannot decide B's tag (404) — decisions are self-only"
+
+# B confirms.
+ccode=$(curl -s -o /dev/null -w '%{http_code}' -X POST \
+  "$API/v1/face-tags/$TAGID/confirm" -H "Authorization: Bearer $B")
+[ "$ccode" = "204" ] || fail "confirm returned HTTP $ccode, expected 204"
+
+# The trigger must now have written the media_subjects row...
+subj2=$(psql_ -c "SELECT count(*) FROM media_subjects WHERE media_item_id='$MID' AND user_id='$BID'")
+[ "$subj2" = "1" ] || fail "confirming did not create a media_subjects row (trigger?) — count=$subj2"
+# ...and the tag is now confirmed, stamped with who decided it.
+read -r cstatus cdecider <<<"$(psql_ -c \
+  "SELECT status, (decided_by='$BID') FROM face_tags WHERE id='$TAGID'" | tr '|' ' ')"
+[ "$cstatus" = "confirmed" ] || fail "tag status is '$cstatus' after confirm, expected 'confirmed'"
+[ "$cdecider" = "t" ] || fail "decided_by was not stamped with B"
+pass "confirm → media_subjects row created, tag confirmed & stamped (decided_by=B)"
+
+# THE PAYOFF: B now sees the photo in the feed. The privacy loop is closed.
+bfeed2=$(curl -sf "$API/v1/albums/$ALBUM/media" -H "Authorization: Bearer $B" | jq '.items|length')
+[ "$bfeed2" = "1" ] || fail "B still sees $bfeed2 photos after confirming (expected 1) — visibility not granted"
+pass "after confirming, B sees the photo (1 in feed) — face-privacy loop closed"
+
+# And the suggestion is gone from B's pending list (decided).
+left=$(curl -sf "$API/v1/albums/$ALBUM/my-suggested-tags" -H "Authorization: Bearer $B" | jq '.suggestions|length')
+[ "$left" = "0" ] || fail "the confirmed suggestion is still pending ($left left)"
+pass "decided suggestion cleared from B's pending list"
+
 echo
 printf '\033[32m════ FACE MATCH SMOKE PASSED ════\033[0m\n'
-echo "reference embedded · faces detected · B recognised (suggested) · no leak before confirm"
+echo "reference embedded · faces detected · B recognised (suggested) · no leak before confirm · confirm grants visibility"

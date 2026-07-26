@@ -112,6 +112,43 @@ func (q *Queries) CreateFaceReference(ctx context.Context, arg CreateFaceReferen
 	return i, err
 }
 
+const decideFaceTag = `-- name: DecideFaceTag :one
+UPDATE face_tags
+   SET status = $2, decided_by = $3, decided_at = now()
+ WHERE id = $1
+RETURNING id, media_item_id, album_id, user_id, status
+`
+
+type DecideFaceTagParams struct {
+	ID        uuid.UUID
+	Status    FaceTagStatus
+	DecidedBy *uuid.UUID
+}
+
+type DecideFaceTagRow struct {
+	ID          uuid.UUID
+	MediaItemID uuid.UUID
+	AlbumID     uuid.UUID
+	UserID      uuid.UUID
+	Status      FaceTagStatus
+}
+
+// Confirm or reject. decided_by/at record who acted. The media_subjects trigger fires
+// on the status change: 'confirmed' grants visibility, 'rejected' withdraws it (unless
+// another confirmed tag for the same person remains on the photo).
+func (q *Queries) DecideFaceTag(ctx context.Context, arg DecideFaceTagParams) (DecideFaceTagRow, error) {
+	row := q.db.QueryRow(ctx, decideFaceTag, arg.ID, arg.Status, arg.DecidedBy)
+	var i DecideFaceTagRow
+	err := row.Scan(
+		&i.ID,
+		&i.MediaItemID,
+		&i.AlbumID,
+		&i.UserID,
+		&i.Status,
+	)
+	return i, err
+}
+
 const eraseUserFaceConsents = `-- name: EraseUserFaceConsents :exec
 DELETE FROM face_consents WHERE user_id = $1
 `
@@ -193,6 +230,33 @@ func (q *Queries) GetActiveFaceConsent(ctx context.Context, userID uuid.UUID) (F
 	return i, err
 }
 
+const getFaceTagForDecision = `-- name: GetFaceTagForDecision :one
+SELECT id, media_item_id, album_id, user_id, status FROM face_tags WHERE id = $1
+`
+
+type GetFaceTagForDecisionRow struct {
+	ID          uuid.UUID
+	MediaItemID uuid.UUID
+	AlbumID     uuid.UUID
+	UserID      uuid.UUID
+	Status      FaceTagStatus
+}
+
+// Loads a tag for confirm/reject, so the service can check the caller owns it (only
+// the tagged person decides their own tag).
+func (q *Queries) GetFaceTagForDecision(ctx context.Context, id uuid.UUID) (GetFaceTagForDecisionRow, error) {
+	row := q.db.QueryRow(ctx, getFaceTagForDecision, id)
+	var i GetFaceTagForDecisionRow
+	err := row.Scan(
+		&i.ID,
+		&i.MediaItemID,
+		&i.AlbumID,
+		&i.UserID,
+		&i.Status,
+	)
+	return i, err
+}
+
 const listFaceReferences = `-- name: ListFaceReferences :many
 SELECT id, user_id, storage_key, model_id, det_score, created_at, deleted_at,
        (embedding IS NOT NULL)::boolean AS processed
@@ -241,6 +305,66 @@ func (q *Queries) ListFaceReferences(ctx context.Context, userID uuid.UUID) ([]L
 	return items, nil
 }
 
+const listMySuggestedTags = `-- name: ListMySuggestedTags :many
+
+SELECT ft.id AS tag_id, ft.media_item_id, ft.similarity,
+       f.crop_key, f.bbox_x, f.bbox_y, f.bbox_w, f.bbox_h
+  FROM face_tags ft
+  JOIN faces f ON f.id = ft.face_id
+  JOIN media_items mi ON mi.id = ft.media_item_id AND mi.deleted_at IS NULL AND mi.state = 'ready'
+ WHERE ft.album_id = $1 AND ft.user_id = $2 AND ft.status = 'suggested'
+ ORDER BY ft.similarity DESC NULLS LAST
+`
+
+type ListMySuggestedTagsParams struct {
+	AlbumID uuid.UUID
+	UserID  uuid.UUID
+}
+
+type ListMySuggestedTagsRow struct {
+	TagID       uuid.UUID
+	MediaItemID uuid.UUID
+	Similarity  *float32
+	CropKey     *string
+	BboxX       float32
+	BboxY       float32
+	BboxW       float32
+	BboxH       float32
+}
+
+// --- tag confirmation (M4.4) -----------------------------------------------
+// Photos in an album where the caller is SUGGESTED but has not decided yet — the
+// input to the "confirm you're in these" sheet. Returns the tag, the photo, and the
+// face crop so the UI can show exactly which face it means. Only ready photos.
+func (q *Queries) ListMySuggestedTags(ctx context.Context, arg ListMySuggestedTagsParams) ([]ListMySuggestedTagsRow, error) {
+	rows, err := q.db.Query(ctx, listMySuggestedTags, arg.AlbumID, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMySuggestedTagsRow{}
+	for rows.Next() {
+		var i ListMySuggestedTagsRow
+		if err := rows.Scan(
+			&i.TagID,
+			&i.MediaItemID,
+			&i.Similarity,
+			&i.CropKey,
+			&i.BboxX,
+			&i.BboxY,
+			&i.BboxW,
+			&i.BboxH,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const revokeFaceConsent = `-- name: RevokeFaceConsent :exec
 UPDATE face_consents
    SET revoked_at = now()
@@ -252,6 +376,43 @@ UPDATE face_consents
 func (q *Queries) RevokeFaceConsent(ctx context.Context, userID uuid.UUID) error {
 	_, err := q.db.Exec(ctx, revokeFaceConsent, userID)
 	return err
+}
+
+const selfClaimFace = `-- name: SelfClaimFace :one
+INSERT INTO face_tags (media_item_id, album_id, face_id, user_id, source, status, decided_by, decided_at)
+SELECT f.media_item_id, f.album_id, f.id, $2, 'self_claimed', 'confirmed', $2, now()
+  FROM faces f WHERE f.id = $1
+ON CONFLICT (face_id, user_id)
+DO UPDATE SET status = 'confirmed', source = 'self_claimed', decided_by = $2, decided_at = now()
+RETURNING id, media_item_id, album_id, user_id, status
+`
+
+type SelfClaimFaceParams struct {
+	ID     uuid.UUID
+	UserID uuid.UUID
+}
+
+type SelfClaimFaceRow struct {
+	ID          uuid.UUID
+	MediaItemID uuid.UUID
+	AlbumID     uuid.UUID
+	UserID      uuid.UUID
+	Status      FaceTagStatus
+}
+
+// The caller asserts an untagged face is them (source self_claimed, immediately
+// confirmed — you are trusted to identify yourself). Idempotent on (face_id, user_id).
+func (q *Queries) SelfClaimFace(ctx context.Context, arg SelfClaimFaceParams) (SelfClaimFaceRow, error) {
+	row := q.db.QueryRow(ctx, selfClaimFace, arg.ID, arg.UserID)
+	var i SelfClaimFaceRow
+	err := row.Scan(
+		&i.ID,
+		&i.MediaItemID,
+		&i.AlbumID,
+		&i.UserID,
+		&i.Status,
+	)
+	return i, err
 }
 
 const softDeleteFaceReference = `-- name: SoftDeleteFaceReference :one

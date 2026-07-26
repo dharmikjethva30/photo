@@ -129,6 +129,64 @@ func (h *Handlers) deleteFaceReference(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusNoContent)
 }
 
+// listSuggestedTags handles GET /v1/albums/{albumID}/my-suggested-tags — the photos in
+// this album the caller is auto-suggested in and hasn't decided yet.
+func (h *Handlers) listSuggestedTags(w http.ResponseWriter, r *http.Request) {
+	albumID, err := parseUUIDParam(chi.URLParam(r, "albumID"), "album")
+	if err != nil {
+		respond(w, r, err)
+		return
+	}
+	rows, err := h.Faces.SuggestedTags(r.Context(), albumID, userID(r))
+	if err != nil {
+		respond(w, r, err)
+		return
+	}
+	base := strings.TrimRight(h.Config.PublicBaseURL, "/")
+	out := make([]map[string]any, 0, len(rows))
+	for i := range rows {
+		row := rows[i]
+		v := map[string]any{
+			"tagId":   row.TagID.String(),
+			"mediaId": row.MediaItemID.String(),
+			// The stable thumb URL (same 302-redirect the feed uses) so the sheet can
+			// show the photo; bbox lets it highlight which face is meant.
+			"thumbUrl": base + "/v1/media/" + row.MediaItemID.String() + "/thumb_256",
+			"bbox": map[string]float32{
+				"x": row.BboxX, "y": row.BboxY, "w": row.BboxW, "h": row.BboxH,
+			},
+		}
+		if row.Similarity != nil {
+			v["similarity"] = *row.Similarity
+		}
+		out = append(out, v)
+	}
+	respondJSON(w, r, http.StatusOK, map[string]any{"suggestions": out})
+}
+
+// confirmFaceTag handles POST /v1/face-tags/{tagID}/confirm.
+func (h *Handlers) confirmFaceTag(w http.ResponseWriter, r *http.Request) {
+	h.decideFaceTag(w, r, true)
+}
+
+// rejectFaceTag handles POST /v1/face-tags/{tagID}/reject.
+func (h *Handlers) rejectFaceTag(w http.ResponseWriter, r *http.Request) {
+	h.decideFaceTag(w, r, false)
+}
+
+func (h *Handlers) decideFaceTag(w http.ResponseWriter, r *http.Request, confirm bool) {
+	tagID, err := parseUUIDParam(chi.URLParam(r, "tagID"), "tag")
+	if err != nil {
+		respond(w, r, err)
+		return
+	}
+	if err := h.Faces.Decide(r.Context(), tagID, userID(r), confirm); err != nil {
+		respond(w, r, err)
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 // eraseFaceData handles DELETE /v1/me/face-data — the GDPR erasure path.
 func (h *Handlers) eraseFaceData(w http.ResponseWriter, r *http.Request) {
 	report, err := h.Faces.EraseFaceData(r.Context(), userID(r))

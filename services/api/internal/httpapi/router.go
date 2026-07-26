@@ -89,6 +89,9 @@ func NewRouter(d Deps) http.Handler {
 					r.Get("/", h.getAlbum)
 					r.Get("/members", h.listAlbumMembers)
 					r.Get("/media", h.albumFeed)
+					// Photos the caller is auto-suggested in but hasn't confirmed —
+					// the first-run "confirm you're in these" sheet (M4.4).
+					r.Get("/my-suggested-tags", h.listSuggestedTags)
 					r.Post("/uploads", h.declareUpload)
 					r.Post("/invites", h.createInvite)
 					r.Get("/invites", h.listInvites)
@@ -109,6 +112,11 @@ func NewRouter(d Deps) http.Handler {
 				r.Post("/complete", h.completeUpload)
 				r.Delete("/", h.abortUpload)
 			})
+
+			// Confirming/rejecting a suggested tag. Only the tagged person may
+			// decide their own tag; confirming is what grants visibility (M4.4).
+			r.Post("/face-tags/{tagID}/confirm", h.confirmFaceTag)
+			r.Post("/face-tags/{tagID}/reject", h.rejectFaceTag)
 
 			// The stable image URL the feed hands out. Re-checks visibility, then
 			// redirects to a short-lived presigned URL.

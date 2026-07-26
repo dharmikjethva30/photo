@@ -232,6 +232,58 @@ func (s *Service) DeleteReference(ctx context.Context, userID, referenceID uuid.
 	return nil
 }
 
+// --- tag confirmation (M4.4) -----------------------------------------------
+
+// SuggestedTags lists photos in an album the caller is SUGGESTED in but has not decided
+// yet — the "confirm you're in these" sheet. Self-scoped (user_id = caller), so it can
+// only ever return the caller's own pending suggestions.
+func (s *Service) SuggestedTags(
+	ctx context.Context, albumID, userID uuid.UUID,
+) ([]sqlcgen.ListMySuggestedTagsRow, error) {
+	rows, err := s.q.ListMySuggestedTags(ctx, sqlcgen.ListMySuggestedTagsParams{
+		AlbumID: albumID,
+		UserID:  userID,
+	})
+	if err != nil {
+		return nil, problem.Internal(fmt.Errorf("list suggested tags: %w", err))
+	}
+	return rows, nil
+}
+
+// Decide confirms or rejects a suggested tag. ONLY the tagged person may decide their
+// own tag — confirming is what turns a suggestion into visibility (via the trigger),
+// so it must not be something anyone else can do on your behalf.
+func (s *Service) Decide(
+	ctx context.Context, tagID, userID uuid.UUID, confirm bool,
+) error {
+	tag, err := s.q.GetFaceTagForDecision(ctx, tagID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return problem.NotFound("No such tag.")
+		}
+		return problem.Internal(fmt.Errorf("get tag: %w", err))
+	}
+	if tag.UserID != userID {
+		// 404, not 403: confirming a tag exists for someone else leaks that we think a
+		// given person is in a photo — exactly what face-privacy protects.
+		return problem.NotFound("No such tag.")
+	}
+
+	status := sqlcgen.FaceTagStatusRejected
+	if confirm {
+		status = sqlcgen.FaceTagStatusConfirmed
+	}
+	if _, err := s.q.DecideFaceTag(ctx, sqlcgen.DecideFaceTagParams{
+		ID:        tagID,
+		Status:    status,
+		DecidedBy: &userID,
+	}); err != nil {
+		return problem.Internal(fmt.Errorf("decide tag: %w", err))
+	}
+	// media_subjects is updated by the sync trigger on the status change.
+	return nil
+}
+
 // --- erasure ---------------------------------------------------------------
 
 // ErasureReport is what was actually removed, so the endpoint can prove erasure.

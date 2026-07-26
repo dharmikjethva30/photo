@@ -80,6 +80,10 @@ type Querier interface {
 	// too: this is a fresh attempt, not the old one.
 	CreateUploadSession(ctx context.Context, arg CreateUploadSessionParams) (UploadSession, error)
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
+	// Confirm or reject. decided_by/at record who acted. The media_subjects trigger fires
+	// on the status change: 'confirmed' grants visibility, 'rejected' withdraws it (unless
+	// another confirmed tag for the same person remains on the photo).
+	DecideFaceTag(ctx context.Context, arg DecideFaceTagParams) (DecideFaceTagRow, error)
 	// Media queries.
 	//
 	// NOTE: the feed and single-item reads are NOT here. They share one visibility
@@ -110,6 +114,9 @@ type Querier interface {
 	GetActiveFaceConsent(ctx context.Context, userID uuid.UUID) (FaceConsent, error)
 	GetAlbum(ctx context.Context, id uuid.UUID) (Album, error)
 	GetAlbumMember(ctx context.Context, arg GetAlbumMemberParams) (AlbumMember, error)
+	// Loads a tag for confirm/reject, so the service can check the caller owns it (only
+	// the tagged person decides their own tag).
+	GetFaceTagForDecision(ctx context.Context, id uuid.UUID) (GetFaceTagForDecisionRow, error)
 	// The row plus the album title and cover, which the join/landing screen shows before
 	// the user commits. Only non-deleted albums: an invite to a deleted album is dead.
 	GetInviteByCode(ctx context.Context, code string) (GetInviteByCodeRow, error)
@@ -129,6 +136,11 @@ type Querier interface {
 	// it: live albums on top, keepsakes below.
 	ListAlbumsForUser(ctx context.Context, arg ListAlbumsForUserParams) ([]Album, error)
 	ListFaceReferences(ctx context.Context, userID uuid.UUID) ([]ListFaceReferencesRow, error)
+	// --- tag confirmation (M4.4) -----------------------------------------------
+	// Photos in an album where the caller is SUGGESTED but has not decided yet — the
+	// input to the "confirm you're in these" sheet. Returns the tag, the photo, and the
+	// face crop so the UI can show exactly which face it means. Only ready photos.
+	ListMySuggestedTags(ctx context.Context, arg ListMySuggestedTagsParams) ([]ListMySuggestedTagsRow, error)
 	// The reconciler's input: uploads whose client died between the last PUT and the
 	// /complete call. See docs/adr/0003.
 	ListStalePendingUploads(ctx context.Context, arg ListStalePendingUploadsParams) ([]MediaItem, error)
@@ -153,6 +165,9 @@ type Querier interface {
 	// Marks the presented token as replaced. Reuse detection reads `replaced_by`:
 	// a token that already has one is being replayed.
 	RotateRefreshToken(ctx context.Context, arg RotateRefreshTokenParams) error
+	// The caller asserts an untagged face is them (source self_claimed, immediately
+	// confirmed — you are trusted to identify yourself). Idempotent on (face_id, user_id).
+	SelfClaimFace(ctx context.Context, arg SelfClaimFaceParams) (SelfClaimFaceRow, error)
 	SetAlbumCover(ctx context.Context, arg SetAlbumCoverParams) error
 	// Ordinary retire-a-reference (the user replaced their selfie). Ownership-scoped, and
 	// returns the storage_key so the caller can delete the S3 object too. NOT erasure.

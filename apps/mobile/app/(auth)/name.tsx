@@ -20,7 +20,10 @@ export default function NameScreen() {
   const submit = () => {
     const trimmed = name.trim()
     if (!trimmed) return
-    update.mutate({ displayName: trimmed }, { onSuccess: () => router.replace('/(app)/library') })
+    update.mutate(
+      { displayName: trimmed },
+      { onSuccess: () => router.replace('/(auth)/face-reference') },
+    )
   }
 
   return (

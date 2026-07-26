@@ -9,7 +9,7 @@ import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { API_BASE_URL } from '../../../../../src/api/client'
-import { useAlbumFeed } from '../../../../../src/api/hooks'
+import { useAlbumFeed, useHideMedia } from '../../../../../src/api/hooks'
 import { useSessionStore } from '../../../../../src/auth/session'
 
 /**
@@ -31,6 +31,7 @@ export default function PhotoViewer() {
     [feed.data, photoId],
   )
   const { accessToken } = useSessionStore()
+  const hide = useHideMedia(albumId)
 
   const { width, height } = Dimensions.get('window')
 
@@ -199,9 +200,9 @@ export default function PhotoViewer() {
         )}
       </View>
 
-      {/* Bottom bar. Save / Share / Hide me / Allowlist are M5-M6 endpoints, so they
-          are deliberately absent rather than present and inert — a button that does
-          nothing is worse than one that is not there. */}
+      {/* Bottom bar. Hide-me and Share appear only for a photo the viewer actually
+          appears in — those are subject controls, meaningless for anyone else, and
+          offering them would leak whether the server thinks you're in the frame. */}
       <View
         style={{
           position: 'absolute',
@@ -209,13 +210,72 @@ export default function PhotoViewer() {
           left: 16,
           right: 16,
           alignItems: 'center',
+          gap: 16,
         }}
       >
+        {item?.viewerAppears && (
+          <View style={{ flexDirection: 'row', gap: 12 }}>
+            <OverlayAction
+              icon="share"
+              label="Share of me"
+              onPress={() => router.push(`/(modals)/share/${albumId}?photoId=${item.id}`)}
+            />
+            <OverlayAction
+              busy={hide.isPending}
+              icon="eye-off"
+              label="Hide me"
+              onPress={() =>
+                hide.mutate(
+                  { mediaId: item.id, hide: true },
+                  // The photo leaves every feed the moment the veto lands, so there is
+                  // nothing left to look at here — return to the grid.
+                  { onSuccess: () => router.back() },
+                )
+              }
+            />
+          </View>
+        )}
         <Text color={overlay.inkMuted} variant="monoMeta">
           {item?.width && item.height ? `ORIG · ${item.width}×${item.height}` : 'ORIGINAL QUALITY'}
         </Text>
       </View>
     </View>
+  )
+}
+
+function OverlayAction({
+  icon,
+  label,
+  onPress,
+  busy = false,
+}: {
+  icon: 'share' | 'eye-off'
+  label: string
+  onPress: () => void
+  busy?: boolean
+}) {
+  return (
+    <Pressable
+      accessibilityLabel={label}
+      disabled={busy}
+      hitSlop={8}
+      onPress={onPress}
+      style={{
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 8,
+        paddingHorizontal: 16,
+        height: 44,
+        borderRadius: 22,
+        backgroundColor: overlay.controlBg,
+        opacity: busy ? 0.6 : 1,
+      }}
+    >
+      <Icon color={overlay.ink} name={icon} size={16} />
+      <Text color={overlay.ink} variant="label">
+        {label}
+      </Text>
+    </Pressable>
   )
 }
 

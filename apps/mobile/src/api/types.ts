@@ -111,6 +111,58 @@ export interface FeedPage {
   nextCursor?: string
 }
 
+// --- faces & subject controls (M4-M5) --------------------------------------
+
+/** GET /v1/me/face-consent. Drives the biometric consent gate. */
+export interface FaceConsent {
+  currentVersion: string
+  granted: boolean
+  grantedVersion?: string
+  grantedAt?: string
+  /** True until the user has agreed to the CURRENT copy version. */
+  needsConsent: boolean
+}
+
+/** A reference selfie, from GET/POST /v1/me/face-references. */
+export interface FaceReference {
+  id: string
+  createdAt: string
+  /** The embedding exists — the face worker has processed it. */
+  processed: boolean
+}
+
+/** POST /v1/me/face-references — the presigned single-PUT plan for a selfie. */
+export interface DeclareReferenceResult {
+  referenceId: string
+  upload: {
+    url: string
+    headers: Record<string, string>
+    expiresAt: string
+  }
+}
+
+/** One pending auto-suggestion, from GET /v1/albums/{id}/my-suggested-tags. */
+export interface SuggestedTag {
+  tagId: string
+  mediaId: string
+  /** Stable thumb URL (302s to a presigned one), same as the feed. */
+  thumbUrl: string
+  /** Normalised [0,1] face box, for highlighting which face is meant. */
+  bbox: { x: number; y: number; w: number; h: number }
+  similarity?: number
+}
+
+export type GrantScope = 'single_media' | 'all_media_of_grantor'
+
+/** A grant the caller has issued, from GET /v1/albums/{id}/grants. */
+export interface Grant {
+  grantId: string
+  scope: GrantScope
+  granteeUserId: string
+  mediaId?: string
+  createdAt: string
+}
+
 export interface DeclareUploadResult {
   mediaId: string
   mode?: 'single' | 'multipart'

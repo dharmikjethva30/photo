@@ -93,6 +93,33 @@ export default function Me() {
         </View>
       )}
 
+      <View style={{ marginTop: 28, gap: 8 }}>
+        <SectionLabel>Privacy</SectionLabel>
+        <Pressable
+          accessibilityLabel="Face and privacy settings"
+          onPress={() => router.push('/(app)/settings/privacy')}
+          style={{
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+            backgroundColor: t.surface,
+            borderColor: t.line,
+            borderWidth: 1,
+            borderRadius: t.radii.md,
+            padding: 16,
+          }}
+        >
+          <Icon color={t.ink} name="face" size={18} />
+          <View style={{ flex: 1 }}>
+            <Text variant="bodySmStrong">Face &amp; privacy</Text>
+            <Text color={t.inkMuted} variant="metaSm">
+              Your selfies, consent, and data controls
+            </Text>
+          </View>
+          <Icon color={t.inkMuted} name="chevron-right" size={16} />
+        </Pressable>
+      </View>
+
       <View style={{ marginTop: 28, gap: 12 }}>
         <SectionLabel>Developer</SectionLabel>
         <View

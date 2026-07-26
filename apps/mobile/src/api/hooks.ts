@@ -5,17 +5,22 @@
  */
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { setSession } from '../auth/session'
+import { enrollFaceReference } from '../upload/faceReference'
 import { anonGet, anonRequest, request } from './client'
 import type {
   Album,
   AlbumMember,
   AlbumTemplate,
+  FaceConsent,
+  FaceReference,
   FeedPage,
+  Grant,
   Invite,
   InvitePreview,
   Me,
   PrivacyMode,
   Session,
+  SuggestedTag,
 } from './types'
 
 export const queryKeys = {
@@ -25,6 +30,10 @@ export const queryKeys = {
   albumMembers: (id: string) => ['album', id, 'members'] as const,
   albumInvites: (id: string) => ['album', id, 'invites'] as const,
   albumFeed: (id: string, filter: string) => ['album', id, 'feed', filter] as const,
+  faceConsent: ['face-consent'] as const,
+  faceReferences: ['face-references'] as const,
+  suggestedTags: (albumId: string) => ['album', albumId, 'suggested-tags'] as const,
+  albumGrants: (albumId: string) => ['album', albumId, 'grants'] as const,
 }
 
 // --- auth ------------------------------------------------------------------
@@ -217,5 +226,158 @@ export function useAlbumFeed(
     getNextPageParam: last => last.nextCursor,
     enabled: Boolean(albumID),
     refetchInterval: pollWhileProcessing ? 2000 : false,
+  })
+}
+
+// --- faces: consent + reference enrolment ----------------------------------
+
+/** The biometric-consent state. Drives the onboarding gate and the privacy screen. */
+export function useFaceConsent() {
+  return useQuery({
+    queryKey: queryKeys.faceConsent,
+    queryFn: () => request<FaceConsent>('/v1/me/face-consent'),
+  })
+}
+
+/** Grant consent to the CURRENT copy version. The server stamps the version itself. */
+export function useGrantFaceConsent() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () => request<FaceConsent>('/v1/me/face-consent', { method: 'POST' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.faceConsent }),
+  })
+}
+
+/** The user's enrolled reference selfies. */
+export function useFaceReferences() {
+  return useQuery({
+    queryKey: queryKeys.faceReferences,
+    queryFn: () => request<{ references: FaceReference[] }>('/v1/me/face-references'),
+    // The worker embeds a fresh selfie moments after upload; poll briefly so the
+    // "processing" state resolves to "ready" without a manual refresh.
+    refetchInterval: q => {
+      const refs = q.state.data?.references ?? []
+      return refs.some(r => !r.processed) ? 2500 : false
+    },
+  })
+}
+
+/** Enrol a reference selfie (declare → PUT → complete against the facedata bucket). */
+export function useEnrollFaceReference() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (asset: { uri: string; mimeType?: string | null; fileName?: string | null }) =>
+      enrollFaceReference(asset),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.faceReferences }),
+  })
+}
+
+/** Delete one reference selfie (soft-delete + S3 delete, server-side). */
+export function useDeleteFaceReference() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (referenceId: string) =>
+      request(`/v1/me/face-references/${referenceId}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.faceReferences }),
+  })
+}
+
+/** GDPR erasure: hard-delete every face reference, embedding, tag and crop. */
+export function useEraseFaceData() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: () =>
+      request<{ referencesDeleted: number; objectsDeleted: number }>('/v1/me/face-data', {
+        method: 'DELETE',
+      }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.faceReferences })
+      void qc.invalidateQueries({ queryKey: queryKeys.faceConsent })
+    },
+  })
+}
+
+// --- faces: tag confirmation (the "you're in these" sheet) -----------------
+
+/** Photos in an album the viewer is auto-suggested in but hasn't decided yet. */
+export function useSuggestedTags(albumID: string) {
+  return useQuery({
+    queryKey: queryKeys.suggestedTags(albumID),
+    queryFn: () =>
+      request<{ suggestions: SuggestedTag[] }>(`/v1/albums/${albumID}/my-suggested-tags`),
+    enabled: Boolean(albumID),
+  })
+}
+
+/**
+ * Confirm or reject a suggested tag. Confirming grants visibility (server-side, via
+ * the media_subjects trigger), so on success we refresh the feed AND the suggestions.
+ */
+export function useDecideFaceTag(albumID: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ tagId, confirm }: { tagId: string; confirm: boolean }) =>
+      request(`/v1/face-tags/${tagId}/${confirm ? 'confirm' : 'reject'}`, { method: 'POST' }),
+    onSuccess: () => {
+      void qc.invalidateQueries({ queryKey: queryKeys.suggestedTags(albumID) })
+      void qc.invalidateQueries({ queryKey: ['album', albumID, 'feed'] })
+      void qc.invalidateQueries({ queryKey: queryKeys.album(albumID) })
+    },
+  })
+}
+
+// --- subject controls: hide-me + share grants ------------------------------
+
+/** The absolute hide-me veto on a photo the viewer appears in. */
+export function useHideMedia(albumID: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ mediaId, hide }: { mediaId: string; hide: boolean }) =>
+      request(`/v1/media/${mediaId}/hide`, { method: hide ? 'POST' : 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: ['album', albumID, 'feed'] }),
+  })
+}
+
+/** Grants the caller has issued in an album (for the review/revoke list). */
+export function useAlbumGrants(albumID: string) {
+  return useQuery({
+    queryKey: queryKeys.albumGrants(albumID),
+    queryFn: () => request<{ grants: Grant[] }>(`/v1/albums/${albumID}/grants`),
+    enabled: Boolean(albumID),
+  })
+}
+
+/** "Show this photo of me to X." */
+export function useGrantSingle(albumID: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: ({ mediaId, granteeUserId }: { mediaId: string; granteeUserId: string }) =>
+      request<{ grantId: string }>(`/v1/media/${mediaId}/grants`, {
+        method: 'POST',
+        body: { granteeUserId },
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.albumGrants(albumID) }),
+  })
+}
+
+/** "Show X every photo of me in this album." */
+export function useGrantBulk(albumID: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (granteeUserId: string) =>
+      request<{ grantId: string }>(`/v1/albums/${albumID}/grants`, {
+        method: 'POST',
+        body: { granteeUserId },
+      }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.albumGrants(albumID) }),
+  })
+}
+
+/** Revoke a grant the caller issued. */
+export function useRevokeGrant(albumID: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (grantId: string) => request(`/v1/grants/${grantId}`, { method: 'DELETE' }),
+    onSuccess: () => void qc.invalidateQueries({ queryKey: queryKeys.albumGrants(albumID) }),
   })
 }

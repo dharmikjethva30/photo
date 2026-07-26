@@ -10,7 +10,12 @@ import {
   ScrollView,
   View,
 } from 'react-native'
-import { useAlbum, useAlbumFeed, useAlbumMembers } from '../../../../src/api/hooks'
+import {
+  useAlbum,
+  useAlbumFeed,
+  useAlbumMembers,
+  useSuggestedTags,
+} from '../../../../src/api/hooks'
 import type { FeedItem } from '../../../../src/api/types'
 import { useSessionStore } from '../../../../src/auth/session'
 
@@ -34,6 +39,11 @@ export default function AlbumScreen() {
   const members = useAlbumMembers(albumId)
   const processing = album.data?.processingCount ?? 0
   const feed = useAlbumFeed(albumId, filter, processing > 0)
+  // Face-mode only: photos the viewer is suggested in but hasn't confirmed. Drives the
+  // "you're in these" banner — the entry point to the confirm sheet.
+  const faceMode = album.data?.privacyMode === 'face'
+  const suggestions = useSuggestedTags(faceMode ? albumId : '')
+  const suggestedCount = suggestions.data?.suggestions.length ?? 0
 
   const items = useMemo(() => feed.data?.pages.flatMap(p => p.items) ?? [], [feed.data])
 
@@ -159,6 +169,36 @@ export default function AlbumScreen() {
             {plural(processing, 'photo')} still processing — they appear here automatically.
           </Text>
         </View>
+      )}
+
+      {suggestedCount > 0 && (
+        <Pressable
+          accessibilityLabel={`Confirm ${suggestedCount} photos you may be in`}
+          onPress={() => router.push(`/(modals)/confirm-tags/${albumId}`)}
+          style={{
+            marginHorizontal: 16,
+            marginBottom: 12,
+            padding: 14,
+            borderRadius: t.radii.md,
+            backgroundColor: t.accentSoft,
+            borderWidth: 1,
+            borderColor: t.accent,
+            flexDirection: 'row',
+            alignItems: 'center',
+            gap: 12,
+          }}
+        >
+          <Icon color={t.accent} name="face" size={20} />
+          <View style={{ flex: 1 }}>
+            <Text color={t.accent} variant="bodySmStrong">
+              You might be in {plural(suggestedCount, 'photo')}
+            </Text>
+            <Text color={t.accent} variant="metaSm">
+              Confirm to add them to your album — only you decide.
+            </Text>
+          </View>
+          <Icon color={t.accent} name="chevron-right" size={16} />
+        </Pressable>
       )}
 
       {/* Filter chips. Only "All" and "Just me" are wired; the prototype's

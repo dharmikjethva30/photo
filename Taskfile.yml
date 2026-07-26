@@ -445,9 +445,14 @@ tasks:
       - bash scripts/smoke-faces.sh
 
   smoke:faces-match:
-    desc: 'Face matching — real detection + recognition; suggested-only never leaks (needs face worker)'
+    desc: 'Face matching — real detection + recognition; suggested-only never leaks; confirm grants visibility (needs face worker)'
     cmds:
       - bash scripts/smoke-faces-match.sh
+
+  smoke:share-hide:
+    desc: 'Subject controls — single/bulk share grants + the absolute hide-me veto (needs face worker)'
+    cmds:
+      - bash scripts/smoke-share-hide.sh
 
   mediaworker:faces:
     desc: 'Run the Python media worker FACE lane (InsightFace/ArcFace; loads ~300MB model)'

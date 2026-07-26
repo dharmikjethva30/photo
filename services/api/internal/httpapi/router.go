@@ -96,6 +96,9 @@ func NewRouter(d Deps) http.Handler {
 					r.Post("/invites", h.createInvite)
 					r.Get("/invites", h.listInvites)
 					r.Delete("/invites/{inviteID}", h.revokeInvite)
+					// Bulk grant: "show X every photo of me in this album" (M5).
+					r.Post("/grants", h.grantBulk)
+					r.Get("/grants", h.listGrants)
 				})
 			})
 
@@ -117,6 +120,13 @@ func NewRouter(d Deps) http.Handler {
 			// decide their own tag; confirming is what grants visibility (M4.4).
 			r.Post("/face-tags/{tagID}/confirm", h.confirmFaceTag)
 			r.Post("/face-tags/{tagID}/reject", h.rejectFaceTag)
+
+			// Subject controls over a photo they appear in (M5): the hide-me
+			// veto and per-photo share grants.
+			r.Post("/media/{mediaID}/hide", h.hideMedia)
+			r.Delete("/media/{mediaID}/hide", h.unhideMedia)
+			r.Post("/media/{mediaID}/grants", h.grantSingle)
+			r.Delete("/grants/{grantID}", h.revokeGrant)
 
 			// The stable image URL the feed hands out. Re-checks visibility, then
 			// redirects to a short-lived presigned URL.

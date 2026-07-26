@@ -12,6 +12,7 @@ import (
 	"github.com/dharmikjethva30/photo/services/api/internal/app/facesvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/app/invitesvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/app/mediasvc"
+	"github.com/dharmikjethva30/photo/services/api/internal/app/sharesvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/auth"
 	"github.com/dharmikjethva30/photo/services/api/internal/platform/config"
 	"github.com/dharmikjethva30/photo/services/api/internal/platform/logging"
@@ -27,6 +28,7 @@ type Handlers struct {
 	Media   *mediasvc.Service
 	Invites *invitesvc.Service
 	Faces   *facesvc.Service
+	Share   *sharesvc.Service
 	// Queries backs the few endpoints that are genuinely a single read with no
 	// business rule attached (the profile). Anything with a rule belongs in a
 	// service — see the depguard rule keeping pgxpool out of this package.

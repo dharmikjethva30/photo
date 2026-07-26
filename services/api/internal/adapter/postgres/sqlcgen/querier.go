@@ -45,6 +45,9 @@ type Querier interface {
 	// looks lost when it is merely still being processed.
 	CountProcessingMedia(ctx context.Context, albumID uuid.UUID) (int64, error)
 	CreateAlbum(ctx context.Context, arg CreateAlbumParams) (Album, error)
+	// "Show <member> every photo of me in this album, including future uploads." The
+	// forward-looking scope is why visibility can't be materialised (ADR 0005).
+	CreateBulkGrant(ctx context.Context, arg CreateBulkGrantParams) (uuid.UUID, error)
 	// Face queries: consent, reference selfies, and GDPR erasure.
 	//
 	// Face data is GDPR Art. 9 / BIPA biometric data. Two rules shape everything here:
@@ -73,6 +76,10 @@ type Querier interface {
 	// not from a URL). So the code is stored in clear and looked up directly.
 	CreateInvite(ctx context.Context, arg CreateInviteParams) (Invite, error)
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
+	// "Show this one photo of me to <member>." Only meaningful when the grantor is a
+	// subject of the photo (checked in the service). ON CONFLICT re-activates a revoked
+	// grant, matching the partial unique index.
+	CreateSingleGrant(ctx context.Context, arg CreateSingleGrantParams) (uuid.UUID, error)
 	// A re-declare (same client_media_id after a dropped response) starts a NEW S3
 	// multipart upload, so s3_upload_id and part_size must move together. Updating only
 	// s3_upload_id leaves part_size stale or NULL, and Resume then computes the wrong
@@ -130,12 +137,26 @@ type Querier interface {
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	// The sign-in lookup: resolve a provider's subject claim to our user.
 	GetUserByProviderIdentity(ctx context.Context, arg GetUserByProviderIdentityParams) (User, error)
+	// Absolute subject veto. ON CONFLICT re-activates a previously undone hide rather than
+	// erroring, so hide→unhide→hide is idempotent. The sync_media_hidden trigger flips
+	// media_items.is_hidden, which removes the photo for everyone (owner and photographer
+	// included) except the uploader's private copy.
+	HideMedia(ctx context.Context, arg HideMediaParams) (uuid.UUID, error)
+	// Subject veto (hide-me) and allowlist grants (M5).
+	// The authorization gate for both veto and sharing: only a person confirmed to be IN
+	// a photo may hide it or share it. media_subjects is trigger-written from CONFIRMED
+	// face_tags, so this is exactly "has the caller confirmed they appear here".
+	IsMediaSubject(ctx context.Context, arg IsMediaSubjectParams) (bool, error)
 	ListAlbumInvites(ctx context.Context, albumID uuid.UUID) ([]Invite, error)
 	ListAlbumMembers(ctx context.Context, albumID uuid.UUID) ([]ListAlbumMembersRow, error)
 	// The library screen. Ordered newest-active-first, which is how the design shows
 	// it: live albums on top, keepsakes below.
 	ListAlbumsForUser(ctx context.Context, arg ListAlbumsForUserParams) ([]Album, error)
 	ListFaceReferences(ctx context.Context, userID uuid.UUID) ([]ListFaceReferencesRow, error)
+	// The grants the caller has issued in an album, so they can review/revoke them.
+	ListMyGrants(ctx context.Context, arg ListMyGrantsParams) ([]ListMyGrantsRow, error)
+	// The "photos I've hidden" list, so the subject can review and undo their own vetoes.
+	ListMyHiddenMedia(ctx context.Context, arg ListMyHiddenMediaParams) ([]uuid.UUID, error)
 	// --- tag confirmation (M4.4) -----------------------------------------------
 	// Photos in an album where the caller is SUGGESTED but has not decided yet — the
 	// input to the "confirm you're in these" sheet. Returns the tag, the photo, and the
@@ -155,6 +176,9 @@ type Querier interface {
 	// Withdraw consent. Revoking does not itself erase data (that is DELETE /me/face-data);
 	// it stops future processing. Idempotent.
 	RevokeFaceConsent(ctx context.Context, userID uuid.UUID) error
+	// Revoke a grant the caller ISSUED (grantor = caller), by id. Scoped to grantor so
+	// nobody can revoke a grant they didn't make.
+	RevokeGrant(ctx context.Context, arg RevokeGrantParams) (uuid.UUID, error)
 	// Idempotent and ownership-scoped in one statement: the album_id predicate means a
 	// caller can only revoke an invite belonging to an album they passed authorization
 	// for, and re-revoking is a no-op that still returns the row.
@@ -172,6 +196,9 @@ type Querier interface {
 	// Ordinary retire-a-reference (the user replaced their selfie). Ownership-scoped, and
 	// returns the storage_key so the caller can delete the S3 object too. NOT erasure.
 	SoftDeleteFaceReference(ctx context.Context, arg SoftDeleteFaceReferenceParams) (SoftDeleteFaceReferenceRow, error)
+	// The subject undoes their OWN veto. Scoped to (media, user) so nobody can lift
+	// someone else's hide. Returns nothing if there was no active hide.
+	UnhideMedia(ctx context.Context, arg UnhideMediaParams) (uuid.UUID, error)
 	UpdateUserProfile(ctx context.Context, arg UpdateUserProfileParams) (User, error)
 	// Idempotent on (provider, subject) so repeated sign-ins just refresh
 	// last_login_at rather than failing on the unique constraint.

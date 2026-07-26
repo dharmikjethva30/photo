@@ -18,6 +18,7 @@ import (
 	"github.com/dharmikjethva30/photo/services/api/internal/app/facesvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/app/invitesvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/app/mediasvc"
+	"github.com/dharmikjethva30/photo/services/api/internal/app/sharesvc"
 	"github.com/dharmikjethva30/photo/services/api/internal/auth"
 	"github.com/dharmikjethva30/photo/services/api/internal/httpapi"
 	"github.com/dharmikjethva30/photo/services/api/internal/platform/config"
@@ -116,6 +117,7 @@ func run() error {
 	media := mediasvc.New(pool, albums, storage, visibility, cfg.Limit)
 	invites := invitesvc.New(pool, albums, cfg.Limit)
 	faces := facesvc.New(pool, storage, cfg.Faces)
+	share := sharesvc.New(pool, visibility)
 
 	handler := httpapi.NewRouter(httpapi.Deps{
 		Config: cfg,
@@ -128,6 +130,7 @@ func run() error {
 			Media:   media,
 			Invites: invites,
 			Faces:   faces,
+			Share:   share,
 			Queries: sqlcgen.New(pool),
 		},
 	})

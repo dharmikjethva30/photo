@@ -90,6 +90,11 @@ const config: ExpoConfig = {
       },
     ],
     ['expo-font', { fonts: FONTS }],
+    // Allow cleartext HTTP so a RELEASE build can reach the dev backend at
+    // http://<LAN_IP>:8080 and LocalStack presigned URLs at :4566. Release APKs block
+    // cleartext by default; a debug build allowed it implicitly. This is a
+    // develop-against-a-LAN-server affordance — production is HTTPS and this flips off.
+    ['expo-build-properties', { android: { usesCleartextTraffic: true } }],
     // Video playback in the viewer (M2.4). The plugin wires the native player and,
     // on Android, the ExoPlayer dependency; without it VideoView is a no-op.
     'expo-video',

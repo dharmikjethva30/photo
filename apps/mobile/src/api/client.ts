@@ -13,11 +13,18 @@ import type { ProblemDetails, Session } from './types'
 
 /**
  * The emulator is a separate machine: `localhost` there is the emulator itself, so
- * the host Mac is 10.0.2.2. That is the default in app.config.ts; a physical device
- * needs the LAN IP via EXPO_PUBLIC_API_BASE_URL.
+ * the host Mac is 10.0.2.2 (the default). A PHYSICAL device needs the host's LAN IP,
+ * set via EXPO_PUBLIC_API_BASE_URL at build time.
+ *
+ * Read process.env FIRST: Expo's Metro transformer statically inlines EXPO_PUBLIC_*
+ * vars into the JS bundle, so this value is baked into a release APK reliably — more so
+ * than Constants.expoConfig.extra, which depends on the embedded manifest being present
+ * at runtime. Fall back to the config extra, then the emulator default.
  */
 export const API_BASE_URL: string =
-  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ?? 'http://10.0.2.2:8080'
+  process.env.EXPO_PUBLIC_API_BASE_URL ??
+  (Constants.expoConfig?.extra?.apiBaseUrl as string | undefined) ??
+  'http://10.0.2.2:8080'
 
 interface RequestOptions {
   method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
